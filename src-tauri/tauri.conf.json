@@ -1,0 +1,36 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "productName": "Bitrot",
+  "version": "0.1.0",
+  "identifier": "com.bitrot.app",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build",
+    "devUrl": "http://localhost:1419",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Bitrot",
+        "width": 1200,
+        "height": 800,
+        "resizable": true,
+        "backgroundColor": "#000000",
+        "dragDropEnabled": true
+      }
+    ],
+    "security": {
+      "assetProtocol": {
+        "enable": true,
+        "scope": ["**"]
+      }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "externalBin": ["binaries/ffmpeg", "binaries/ffprobe"],
+    "targets": "all"
+  }
+}
