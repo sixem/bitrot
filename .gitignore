@@ -16,6 +16,8 @@ src-tauri/binaries/*
 # Miscellaneous
 /AGENTS.md
 /reference
+codex-target/
+src-tauri/target-codex*/
 
 # Node + Vite
 node_modules
