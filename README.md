@@ -37,9 +37,16 @@ pnpm tauri dev
 ## ffmpeg sidecars
 
 This project expects ffmpeg and ffprobe as sidecar binaries.
+
 Place them in:
 
 - `src-tauri/binaries/`
+
+Quick setup (copies from your PATH):
+
+```bash
+pnpm run setup:ffmpeg
+```
 
 Use names that match your platform target triple:
 
