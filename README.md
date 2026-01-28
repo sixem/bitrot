@@ -55,14 +55,9 @@ pnpm tauri build
 pnpm run make:portable
 ```
 
-This produces:
-
-- `portable/` (ready-to-run folder)
-- `portable.zip` (easy to share)
-
 ## FFmpeg sidecars
 
-This project expects ffmpeg and ffprobe as sidecar binaries.
+This project expects FFmpeg and ffprobe as sidecar binaries.
 
 Place them in:
 
@@ -74,13 +69,13 @@ Quick setup (copies from your `PATH`):
 pnpm run setup:ffmpeg
 ```
 
-BitRot resolves FFmpeg in this order:
+FFmpeg is resolved in this order:
 
-1. `ffmpeg(.exe)` / `ffprobe(.exe)` next to the app executable
+1. `ffmpeg(.exe)` / `ffprobe(.exe)` next to the binary (app) executable
 2. Sidecars in `binaries/` (packaged into app resources)
-3. System `PATH` as a last resort
+3. System `PATH` as a final fallback
 
-Use names that match your platform target triple:
+For development and building, use names that match your platform target triple:
 
 - Windows (x64 MSVC):
   - `ffmpeg-x86_64-pc-windows-msvc.exe`
