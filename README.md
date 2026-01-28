@@ -23,15 +23,17 @@ A simple interface for creating glitchy video effects 💫
 
 ## Showcase
 
+https://github.com/user-attachments/assets/618222b9-3ff3-4a24-a54b-2bd21c06cd2f
+
 https://github.com/user-attachments/assets/728cb83d-a4bd-40c8-aba1-e150a77f96d0
 
 https://github.com/user-attachments/assets/f8a49356-ca71-4443-aea0-ecc2eb55dcd3
 
 ## Development
 
-Prereqs (typical Tauri stack):
+Prereqs (typical Tauri + Vite stack):
 
-- Node 20+
+- Node 20.19+ or 22.12+
 - pnpm
 - Rust (*stable*)
 - Tauri system prereqs for your OS or distro
@@ -42,6 +44,21 @@ Install and run:
 pnpm install
 pnpm tauri dev
 ```
+
+## Build + portable zip (Windows)
+
+To build a portable zip on Windows:
+
+```bash
+pnpm run setup:ffmpeg
+pnpm tauri build
+pnpm run make:portable
+```
+
+This produces:
+
+- `portable/` (ready-to-run folder)
+- `portable.zip` (easy to share)
 
 ## FFmpeg sidecars
 
@@ -56,6 +73,12 @@ Quick setup (copies from your `PATH`):
 ```bash
 pnpm run setup:ffmpeg
 ```
+
+BitRot resolves FFmpeg in this order:
+
+1. `ffmpeg(.exe)` / `ffprobe(.exe)` next to the app executable
+2. Sidecars in `binaries/` (packaged into app resources)
+3. System `PATH` as a last resort
 
 Use names that match your platform target triple:
 
