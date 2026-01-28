@@ -664,6 +664,29 @@ fn build_preview_raw_path(tag: &str) -> PathBuf {
   std::env::temp_dir().join(file_name)
 }
 
+fn normalize_trim_range(start: Option<f64>, end: Option<f64>) -> Option<(f64, f64)> {
+  let start = start?;
+  let end = end?;
+  if !start.is_finite() || !end.is_finite() {
+    return None;
+  }
+  let safe_start = start.max(0.0);
+  let safe_end = end.max(0.0);
+  if safe_end <= safe_start {
+    return None;
+  }
+  Some((safe_start, safe_end))
+}
+
+fn push_trim_args(args: &mut Vec<String>, trim: Option<(f64, f64)>) {
+  if let Some((start, end)) = trim {
+    args.push("-ss".into());
+    args.push(format!("{start:.3}"));
+    args.push("-to".into());
+    args.push(format!("{end:.3}"));
+  }
+}
+
 // Use accurate seeks for previews to match the paused frame.
 fn build_preview_decode_args(
   input_path: &str,
@@ -781,13 +804,21 @@ fn build_encode_args(
   args
 }
 
-fn build_decode_args(input_path: &str, width: u32, height: u32) -> Vec<String> {
-  vec![
+fn build_decode_args(
+  input_path: &str,
+  width: u32,
+  height: u32,
+  trim: Option<(f64, f64)>
+) -> Vec<String> {
+  let mut args = vec![
     "-hide_banner".into(),
     "-loglevel".into(),
     "error".into(),
     "-i".into(),
-    input_path.into(),
+    input_path.into()
+  ];
+  push_trim_args(&mut args, trim);
+  args.extend([
     "-map".into(),
     "0:v:0".into(),
     "-an".into(),
@@ -798,17 +829,26 @@ fn build_decode_args(input_path: &str, width: u32, height: u32) -> Vec<String> {
     "-pix_fmt".into(),
     "rgba".into(),
     "-".into()
-  ]
+  ]);
+  args
 }
 
-fn build_mux_args(temp_video: &PathBuf, input_path: &str, output_path: &str) -> Vec<String> {
-  vec![
+fn build_mux_args(
+  temp_video: &PathBuf,
+  input_path: &str,
+  output_path: &str,
+  trim: Option<(f64, f64)>
+) -> Vec<String> {
+  let mut args = vec![
     "-y".into(),
     "-hide_banner".into(),
     "-loglevel".into(),
     "error".into(),
     "-i".into(),
-    temp_video.to_string_lossy().into_owned(),
+    temp_video.to_string_lossy().into_owned()
+  ];
+  push_trim_args(&mut args, trim);
+  args.extend([
     "-i".into(),
     input_path.into(),
     "-map".into(),
@@ -825,7 +865,8 @@ fn build_mux_args(temp_video: &PathBuf, input_path: &str, output_path: &str) -> 
     "-movflags".into(),
     "+faststart".into(),
     output_path.into()
-  ]
+  ]);
+  args
 }
 
 async fn run_ffmpeg_output(app: &AppHandle, args: Vec<String>) -> Result<(), String> {
@@ -1018,6 +1059,8 @@ pub async fn pixelsort_process(
   height: u32,
   fps: f64,
   duration_seconds: Option<f64>,
+  trim_start_seconds: Option<f64>,
+  trim_end_seconds: Option<f64>,
   config: PixelsortConfig,
   preview_enabled: bool,
   encoding: PixelsortEncoding
@@ -1049,11 +1092,15 @@ pub async fn pixelsort_process(
   let output_path_buf = PathBuf::from(&output_path);
   let temp_video = build_temp_video_path(&output_path);
   let frame_size = (safe_width as usize) * (safe_height as usize) * 4;
-  let total_frames = duration_seconds
+  let trim_range = normalize_trim_range(trim_start_seconds, trim_end_seconds);
+  let duration_for_progress = trim_range
+    .map(|(start, end)| (end - start).max(0.0))
+    .or(duration_seconds);
+  let total_frames = duration_for_progress
     .filter(|duration| *duration > 0.0 && safe_fps > 0.0)
     .map(|duration| (duration * safe_fps).ceil() as u64);
 
-  let decode_args = build_decode_args(&input_path, safe_width, safe_height);
+  let decode_args = build_decode_args(&input_path, safe_width, safe_height, trim_range);
   let encode_args = build_encode_args(
     safe_width,
     safe_height,
@@ -1234,9 +1281,11 @@ pub async fn pixelsort_process(
     return Err(format!("Encoder failed with exit code {encode_status}"));
   }
 
-  if let Err(error) =
-    run_ffmpeg_output(&app, build_mux_args(&temp_video, &input_path, &output_path))
-      .await
+  if let Err(error) = run_ffmpeg_output(
+    &app,
+    build_mux_args(&temp_video, &input_path, &output_path, trim_range)
+  )
+  .await
   {
     cleanup_file(&temp_video);
     cleanup_file(&output_path_buf);
