@@ -5,7 +5,7 @@ type FfmpegGateProps = {
   onRetry: () => void;
 };
 
-// Blocks the UI until FFmpeg sidecars are available.
+// Blocks the UI until FFmpeg is available via local, sidecar, or PATH lookup.
 const FfmpegGate = ({ status, onRetry }: FfmpegGateProps) => {
   if (status.state === "ready") {
     return null;
@@ -14,7 +14,7 @@ const FfmpegGate = ({ status, onRetry }: FfmpegGateProps) => {
   const isChecking = status.state === "checking";
   const title = isChecking ? "Checking FFmpeg" : "FFmpeg not found";
   const message = isChecking
-    ? "Verifying sidecar binaries. This should only take a moment."
+    ? "Checking local, sidecar, and PATH binaries. This should only take a moment."
     : status.message;
 
   return (

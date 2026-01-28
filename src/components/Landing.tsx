@@ -1,6 +1,10 @@
+import { useCallback } from "react";
+import { open } from "@tauri-apps/plugin-dialog";
 import { APP_NAME, APP_TAGLINE, APP_VERSION } from "@/config/app";
 import DropZone from "@/components/DropZone";
 import useGlobalVideoDrop from "@/hooks/useGlobalVideoDrop";
+import { videoExtensions } from "@/domain/video";
+import makeDebug from "@/utils/debug";
 
 // Primary landing screen shown in the desktop app.
 type LandingProps = {
@@ -8,11 +12,37 @@ type LandingProps = {
   onVideoSelected: (path: string) => void;
 };
 
+const debug = makeDebug("landing");
+
 const Landing = ({ isReady, onVideoSelected }: LandingProps) => {
-  const { isDragging } = useGlobalVideoDrop({
+  const { isDragging, handleDropPaths } = useGlobalVideoDrop({
     isEnabled: isReady,
     onVideoSelected
   });
+  const handlePickVideo = useCallback(async () => {
+    if (!isReady) {
+      return;
+    }
+    try {
+      const selection = await open({
+        title: "Select a video",
+        multiple: false,
+        filters: [
+          {
+            name: "Video",
+            extensions: videoExtensions()
+          }
+        ]
+      });
+      if (!selection) {
+        return;
+      }
+      const paths = Array.isArray(selection) ? selection : [selection];
+      handleDropPaths(paths);
+    } catch (error) {
+      debug("file dialog failed: %O", error);
+    }
+  }, [handleDropPaths, isReady]);
 
   return (
     <main className="app" data-dragging={isDragging}>
@@ -27,7 +57,7 @@ const Landing = ({ isReady, onVideoSelected }: LandingProps) => {
         </header>
 
         <section className="drop-section">
-          <DropZone isDisabled={!isReady} />
+          <DropZone isDisabled={!isReady} onPickFile={handlePickVideo} />
 
           <div className="details">
             <p className="details-title">What happens next</p>

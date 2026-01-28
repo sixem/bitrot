@@ -4,14 +4,38 @@ import {
   defaultGlitchConfig,
   type GlitchConfig
 } from "@/modes/glitch";
+import {
+  buildDatablendFilter,
+  defaultDatablendConfig,
+  type DatablendConfig
+} from "@/modes/datablend";
+import {
+  defaultPixelsortConfig,
+  type PixelsortConfig
+} from "@/modes/pixelsort";
+import {
+  buildVhsFilter,
+  defaultVhsConfig,
+  type VhsConfig
+} from "@/modes/vhs";
 import { defaultDatamoshConfig, type DatamoshConfig } from "@/modes/datamosh";
 
-export type ModeId = "copy" | "analog" | "glitch" | "datamosh";
+export type ModeId =
+  | "copy"
+  | "analog"
+  | "vhs"
+  | "glitch"
+  | "datablend"
+  | "pixelsort"
+  | "datamosh";
 
 export type ModeConfigMap = {
   copy: Record<string, never>;
   analog: Record<string, never>;
+  vhs: VhsConfig;
   glitch: GlitchConfig;
+  datablend: DatablendConfig;
+  pixelsort: PixelsortConfig;
   datamosh: DatamoshConfig;
 };
 
@@ -36,12 +60,37 @@ export const MODE_DEFINITIONS: ModeDefinition[] = [
     encode: "h264"
   },
   {
+    id: "vhs",
+    label: "VHS",
+    description: "Tape-style tracking noise, softness, and chroma bleed.",
+    buildFilter: (config) => buildVhsFilter(config as VhsConfig),
+    defaultConfig: defaultVhsConfig,
+    encode: "h264"
+  },
+  {
     id: "glitch",
     label: "Chroma glitch",
     description: "Digital tearing with chroma offsets and decay trails.",
     isExperimental: true,
     buildFilter: (config) => buildGlitchFilter(config as GlitchConfig),
     defaultConfig: defaultGlitchConfig,
+    encode: "h264"
+  },
+  {
+    id: "datablend",
+    label: "Datablend",
+    description: "Glitchy temporal blends with chroma bleed and noise.",
+    isExperimental: true,
+    buildFilter: (config) => buildDatablendFilter(config as DatablendConfig),
+    defaultConfig: defaultDatablendConfig,
+    encode: "h264"
+  },
+  {
+    id: "pixelsort",
+    label: "Pixel sort",
+    description: "Per-pixel sorting for streaky glitch smears and drips.",
+    isExperimental: true,
+    defaultConfig: defaultPixelsortConfig,
     encode: "h264"
   },
   {
@@ -67,6 +116,9 @@ export const getModeDefinition = (id?: ModeId) =>
 export const createModeConfigs = (): ModeConfigMap => ({
   copy: {},
   analog: {},
+  vhs: { ...defaultVhsConfig },
   glitch: { ...defaultGlitchConfig },
+  datablend: { ...defaultDatablendConfig },
+  pixelsort: { ...defaultPixelsortConfig },
   datamosh: { ...defaultDatamoshConfig }
 });

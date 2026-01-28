@@ -1,6 +1,14 @@
-import { useEffect } from "react";
+import { useEffect, useRef, useState, type MouseEvent } from "react";
 import { createPortal } from "react-dom";
 import { joinOutputPath, type OutputPathParts } from "@/jobs/output";
+import {
+  DEFAULT_ENCODING_ID,
+  ENCODING_PRESETS,
+  getAvailableEncodingPresets,
+  getEncodingPreset,
+  type EncodingPreset,
+  type EncodingId
+} from "@/jobs/encoding";
 
 export type ExportSettings = OutputPathParts;
 
@@ -9,11 +17,15 @@ type ExportModalProps = {
   settings: ExportSettings;
   onChange: (next: ExportSettings) => void;
   onClose: () => void;
-  onConfirm: (outputPath: string) => void;
+  onConfirm: (outputPath: string, encodingId: EncodingId) => void;
 };
 
 // Export settings modal used before running a render job.
 const ExportModal = ({ isOpen, settings, onChange, onClose, onConfirm }: ExportModalProps) => {
+  const shouldCloseRef = useRef(false);
+  const [availablePresets, setAvailablePresets] =
+    useState<EncodingPreset[]>(ENCODING_PRESETS);
+
   useEffect(() => {
     if (!isOpen) {
       return;
@@ -29,6 +41,31 @@ const ExportModal = ({ isOpen, settings, onChange, onClose, onConfirm }: ExportM
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [isOpen, onClose]);
 
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+    let isActive = true;
+    getAvailableEncodingPresets()
+      .then((presets) => {
+        if (!isActive) {
+          return;
+        }
+        setAvailablePresets(presets);
+        if (!presets.some((preset) => preset.id === settings.encodingId)) {
+          onChange({ ...settings, encodingId: DEFAULT_ENCODING_ID });
+        }
+      })
+      .catch(() => {
+        if (isActive) {
+          setAvailablePresets(ENCODING_PRESETS);
+        }
+      });
+    return () => {
+      isActive = false;
+    };
+  }, [isOpen, settings.encodingId, onChange, settings]);
+
   if (!isOpen) {
     return null;
   }
@@ -39,14 +76,36 @@ const ExportModal = ({ isOpen, settings, onChange, onClose, onConfirm }: ExportM
     settings.separator
   );
   const isValid = settings.fileName.trim().length > 0;
+  const encodingPreset = getEncodingPreset(settings.encodingId);
+
+  const handleBackdropMouseDown = (event: MouseEvent<HTMLDivElement>) => {
+    shouldCloseRef.current = event.target === event.currentTarget;
+  };
+
+  const handleBackdropClick = (event: MouseEvent<HTMLDivElement>) => {
+    const shouldClose =
+      shouldCloseRef.current && event.target === event.currentTarget;
+    shouldCloseRef.current = false;
+    if (shouldClose) {
+      onClose();
+    }
+  };
 
   return createPortal(
-    <div className="modal-backdrop" role="presentation" onClick={onClose}>
+    <div
+      className="modal-backdrop"
+      role="presentation"
+      onMouseDown={handleBackdropMouseDown}
+      onClick={handleBackdropClick}
+    >
       <div
         className="modal export-modal"
         role="dialog"
         aria-modal="true"
         aria-labelledby="export-modal-title"
+        onMouseDown={() => {
+          shouldCloseRef.current = false;
+        }}
         onClick={(event) => event.stopPropagation()}
       >
         <h2 id="export-modal-title" className="modal-title">
@@ -77,6 +136,28 @@ const ExportModal = ({ isOpen, settings, onChange, onClose, onConfirm }: ExportM
               placeholder="output.bitrot.mp4"
             />
           </label>
+          <label className="export-field">
+            <span className="export-label">Encoding</span>
+            <select
+              className="export-input export-select"
+              value={settings.encodingId}
+              onChange={(event) =>
+                onChange({
+                  ...settings,
+                  encodingId: event.target.value as EncodingId
+                })
+              }
+            >
+              {availablePresets.map((preset) => (
+                <option key={preset.id} value={preset.id}>
+                  {preset.label}
+                </option>
+              ))}
+            </select>
+            <p className="export-help">
+              {encodingPreset.description} {encodingPreset.notes}
+            </p>
+          </label>
           <p className="export-path" title={outputPath}>
             {outputPath || "Output path will appear here."}
           </p>
@@ -88,7 +169,7 @@ const ExportModal = ({ isOpen, settings, onChange, onClose, onConfirm }: ExportM
           <button
             className="modal-button modal-button--primary"
             type="button"
-            onClick={() => onConfirm(outputPath)}
+            onClick={() => onConfirm(outputPath, settings.encodingId)}
             disabled={!isValid}
           >
             Export

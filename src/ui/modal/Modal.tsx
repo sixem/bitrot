@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef, type MouseEvent } from "react";
 import { createPortal } from "react-dom";
 
 type ModalProps = {
@@ -17,6 +17,8 @@ const Modal = ({
   confirmLabel = "Close",
   onClose
 }: ModalProps) => {
+  const shouldCloseRef = useRef(false);
+
   useEffect(() => {
     if (!isOpen) {
       return;
@@ -36,14 +38,35 @@ const Modal = ({
     return null;
   }
 
+  const handleBackdropMouseDown = (event: MouseEvent<HTMLDivElement>) => {
+    shouldCloseRef.current = event.target === event.currentTarget;
+  };
+
+  const handleBackdropClick = (event: MouseEvent<HTMLDivElement>) => {
+    const shouldClose =
+      shouldCloseRef.current && event.target === event.currentTarget;
+    shouldCloseRef.current = false;
+    if (shouldClose) {
+      onClose();
+    }
+  };
+
   return createPortal(
-    <div className="modal-backdrop" role="presentation" onClick={onClose}>
+    <div
+      className="modal-backdrop"
+      role="presentation"
+      onMouseDown={handleBackdropMouseDown}
+      onClick={handleBackdropClick}
+    >
       <div
         className="modal"
         role="dialog"
         aria-modal="true"
         aria-labelledby="modal-title"
         aria-describedby="modal-body"
+        onMouseDown={() => {
+          shouldCloseRef.current = false;
+        }}
         onClick={(event) => event.stopPropagation()}
       >
         <h2 id="modal-title" className="modal-title">

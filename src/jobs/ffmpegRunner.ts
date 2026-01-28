@@ -1,8 +1,13 @@
-import { Command } from "@tauri-apps/plugin-shell";
 import type { VideoAsset } from "@/domain/video";
 import { createFfmpegProgressParser } from "@/jobs/ffmpegProgress";
 import { buildDefaultOutputPath } from "@/jobs/output";
 import { runDatamoshJob } from "@/jobs/datamoshRunner";
+import { runPixelsortJob } from "@/jobs/pixelsortRunner";
+import {
+  spawnWithFallback,
+  type CommandHandle,
+  type CommandSource
+} from "@/system/shellCommand";
 import {
   getModeDefinition,
   type ModeConfigMap,
@@ -12,7 +17,17 @@ import {
   defaultDatamoshConfig,
   type DatamoshConfig
 } from "@/modes/datamosh";
+import {
+  defaultPixelsortConfig,
+  type PixelsortConfig
+} from "@/modes/pixelsort";
 import type { JobProgress } from "@/jobs/types";
+import {
+  DEFAULT_ENCODING_ID,
+  buildVideoEncodingArgs,
+  getEncodingPreset,
+  type EncodingId
+} from "@/jobs/encoding";
 import makeDebug from "@/utils/debug";
 
 type FfmpegRunOptions = {
@@ -20,6 +35,7 @@ type FfmpegRunOptions = {
   durationSeconds?: number;
   modeId?: ModeId;
   modeConfig?: ModeConfigMap[ModeId];
+  encodingId?: EncodingId;
 };
 
 type FfmpegRunCallbacks = {
@@ -34,7 +50,6 @@ export type FfmpegRunHandle = {
   cancel: () => Promise<void>;
 };
 
-const FFMPEG_SIDECAR = "binaries/ffmpeg";
 const debug = makeDebug("jobs:runner");
 
 const sanitizePath = (value: string) => value.trim().replace(/^"+|"+$/g, "");
@@ -66,10 +81,12 @@ const buildArgs = (
   inputPath: string,
   outputPath: string,
   modeId?: ModeId,
-  modeConfig?: ModeConfigMap[ModeId]
+  modeConfig?: ModeConfigMap[ModeId],
+  encodingId?: EncodingId
 ) => {
   const mode = getModeDefinition(modeId);
   const resolvedConfig = modeConfig ?? mode.defaultConfig;
+  const encoding = getEncodingPreset(encodingId ?? DEFAULT_ENCODING_ID);
   // Always pick the first video + (optional) first audio stream explicitly.
   const args = [
     "-y",
@@ -97,12 +114,7 @@ const buildArgs = (
     args.push("-c", "copy");
   } else {
     args.push(
-      "-c:v",
-      "libx264",
-      "-preset",
-      "veryfast",
-      "-crf",
-      "18",
+      ...buildVideoEncodingArgs(encoding),
       "-pix_fmt",
       "yuv420p",
       ...buildAudioArgs(outputPath),
@@ -134,61 +146,86 @@ export const runFfmpegJob = async (
     const datamoshConfig = (options.modeConfig as DatamoshConfig | undefined) ?? {
       ...defaultDatamoshConfig
     };
+    const encodingId = options.encodingId ?? DEFAULT_ENCODING_ID;
     debug("delegating to datamosh pipeline");
     return runDatamoshJob(
       asset,
       outputPath,
       options.durationSeconds,
       datamoshConfig,
+      encodingId,
+      callbacks
+    );
+  }
+  if (options.modeId === "pixelsort") {
+    const pixelsortConfig = (options.modeConfig as PixelsortConfig | undefined) ?? {
+      ...defaultPixelsortConfig
+    };
+    const encodingId = options.encodingId ?? DEFAULT_ENCODING_ID;
+    debug("delegating to pixelsort pipeline");
+    return runPixelsortJob(
+      asset,
+      outputPath,
+      options.durationSeconds,
+      pixelsortConfig,
+      encodingId,
       callbacks
     );
   }
 
-  const args = buildArgs(inputPath, outputPath, options.modeId, options.modeConfig);
+  const args = buildArgs(
+    inputPath,
+    outputPath,
+    options.modeId,
+    options.modeConfig,
+    options.encodingId
+  );
   debug("ffmpeg args: %o", args);
-  const command = Command.sidecar(FFMPEG_SIDECAR, args);
   const feedProgress = createFfmpegProgressParser(
     options.durationSeconds,
     callbacks.onProgress
   );
 
-  command.stdout.on("data", (line) => {
-    if (typeof line === "string") {
-      feedProgress(line);
-    }
-  });
+  const bindHandlers = (command: CommandHandle, source: CommandSource) => {
+    debug("ffmpeg source: %s", source);
+    command.stdout.on("data", (line) => {
+      if (typeof line === "string") {
+        feedProgress(line);
+      }
+    });
 
-  command.stderr.on("data", (line) => {
-    if (typeof line === "string" && line.trim().length > 0) {
-      callbacks.onLog(line.trim());
-      debug("stderr: %s", line.trim());
-    }
-  });
+    command.stderr.on("data", (line) => {
+      if (typeof line === "string" && line.trim().length > 0) {
+        callbacks.onLog(line.trim());
+        debug("stderr: %s", line.trim());
+      }
+    });
 
-  command.on("error", (error) => {
-    const unknownError = error as unknown;
-    const message =
-      typeof unknownError === "string"
-        ? unknownError
-        : unknownError instanceof Error
-          ? unknownError.message
-          : String(unknownError ?? "Unknown ffmpeg error");
-    debug("ffmpeg error: %O", unknownError);
-    callbacks.onError(message);
-  });
+    command.on("error", (error) => {
+      const unknownError = error as unknown;
+      const message =
+        typeof unknownError === "string"
+          ? unknownError
+          : unknownError instanceof Error
+            ? unknownError.message
+            : String(unknownError ?? "Unknown ffmpeg error");
+      debug("ffmpeg error: %O", unknownError);
+      callbacks.onError(message);
+    });
 
-  command.on("close", ({ code, signal }) => {
-    debug("ffmpeg close: code=%s signal=%s", code, signal);
-    const signalValue =
-      typeof signal === "string"
-        ? signal
-        : signal === null || signal === undefined
-          ? null
-          : String(signal);
-    callbacks.onClose(code ?? null, signalValue);
-  });
+    command.on("close", ({ code, signal }) => {
+      debug("ffmpeg close: code=%s signal=%s", code, signal);
+      const signalValue =
+        typeof signal === "string"
+          ? signal
+          : signal === null || signal === undefined
+            ? null
+            : String(signal);
+      callbacks.onClose(code ?? null, signalValue);
+    });
+  };
 
-  const child = await command.spawn();
+  const { child } = await spawnWithFallback("ffmpeg", args, bindHandlers);
 
   return {
     outputPath,

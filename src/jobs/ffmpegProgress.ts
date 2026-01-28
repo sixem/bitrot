@@ -80,6 +80,37 @@ const computePercent = (timeSeconds?: number, durationSeconds?: number) => {
   return Math.min(100, Math.max(0, (timeSeconds / durationSeconds) * 100));
 };
 
+const computeElapsedSeconds = (startedAt: number) =>
+  Math.max(0, (Date.now() - startedAt) / 1000);
+
+const computeEtaSeconds = (options: {
+  percent: number;
+  elapsedSeconds: number;
+  speed?: number;
+  durationSeconds?: number;
+  outTimeSeconds?: number;
+}) => {
+  const { percent, elapsedSeconds, speed, durationSeconds, outTimeSeconds } = options;
+  if (
+    typeof speed === "number" &&
+    Number.isFinite(speed) &&
+    speed > 0 &&
+    typeof outTimeSeconds === "number" &&
+    Number.isFinite(outTimeSeconds) &&
+    typeof durationSeconds === "number" &&
+    Number.isFinite(durationSeconds)
+  ) {
+    const remaining = Math.max(0, durationSeconds - outTimeSeconds);
+    return remaining / speed;
+  }
+
+  if (Number.isFinite(percent) && percent > 0 && elapsedSeconds > 0) {
+    return (elapsedSeconds * (100 - percent)) / percent;
+  }
+
+  return undefined;
+};
+
 export type ProgressParser = (chunk: string) => void;
 
 // Builds a parser that turns ffmpeg progress output into structured updates.
@@ -89,17 +120,29 @@ export const createFfmpegProgressParser = (
 ): ProgressParser => {
   let buffer = "";
   let current: Record<string, string> = {};
+  const startedAt = Date.now();
 
   const commit = () => {
     const outTimeSeconds = parseOutTime(current);
+    const percent = computePercent(outTimeSeconds, durationSeconds);
+    const elapsedSeconds = computeElapsedSeconds(startedAt);
+    const speed = parseSpeed(current.speed);
     const next: JobProgress = {
-      percent: computePercent(outTimeSeconds, durationSeconds),
+      percent,
       frame: parseIntValue(current.frame),
       fps: parseNumber(current.fps),
-      speed: parseSpeed(current.speed),
+      speed,
       bitrate: parseBitrate(current.bitrate),
       outTimeSeconds,
-      totalSizeBytes: parseIntValue(current.total_size)
+      totalSizeBytes: parseIntValue(current.total_size),
+      elapsedSeconds,
+      etaSeconds: computeEtaSeconds({
+        percent,
+        elapsedSeconds,
+        speed,
+        durationSeconds,
+        outTimeSeconds
+      })
     };
     onProgress(next);
     current = {};

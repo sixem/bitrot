@@ -5,13 +5,13 @@ import { checkFfmpegSidecars, type FfmpegStatus } from "@/system/ffmpeg";
 const useFfmpegStatus = () => {
   const [status, setStatus] = useState<FfmpegStatus>({
     state: "checking",
-    message: "Checking FFmpeg sidecars..."
+    message: "Checking FFmpeg..."
   });
 
   const refresh = useCallback(async () => {
     setStatus({
       state: "checking",
-      message: "Checking FFmpeg sidecars..."
+      message: "Checking FFmpeg..."
     });
     const result = await checkFfmpegSidecars();
     setStatus(result);

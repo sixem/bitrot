@@ -1,4 +1,4 @@
-import { useState, type DragEvent } from "react";
+import { useState, type DragEvent, type KeyboardEvent } from "react";
 import { isSupportedVideoPath, videoExtensionsLabel } from "@/domain/video";
 
 type DropZoneProps = {
@@ -6,13 +6,21 @@ type DropZoneProps = {
   onVideoDrop?: (file: File) => void;
   // Called when the drop is not a supported video file.
   onInvalidDrop?: (message: string) => void;
+  // Called when the user clicks the drop zone to pick a file.
+  onPickFile?: () => void | Promise<void>;
   // Prevents any drag/drop interaction when true.
   isDisabled?: boolean;
 };
 
 // Lightweight drop target for the landing page.
-const DropZone = ({ onVideoDrop, onInvalidDrop, isDisabled }: DropZoneProps) => {
+const DropZone = ({
+  onVideoDrop,
+  onInvalidDrop,
+  onPickFile,
+  isDisabled
+}: DropZoneProps) => {
   const [isActive, setIsActive] = useState(false);
+  const isClickable = Boolean(onPickFile) && !isDisabled;
 
   const handleDragOver = (event: DragEvent<HTMLDivElement>) => {
     if (isDisabled) {
@@ -75,15 +83,38 @@ const DropZone = ({ onVideoDrop, onInvalidDrop, isDisabled }: DropZoneProps) => 
     onVideoDrop(file);
   };
 
+  const handleClick = () => {
+    if (!isClickable) {
+      return;
+    }
+    void onPickFile?.();
+  };
+
+  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (!isClickable) {
+      return;
+    }
+    if (event.key !== "Enter" && event.key !== " ") {
+      return;
+    }
+    event.preventDefault();
+    void onPickFile?.();
+  };
+
   return (
     <div
       className="dropzone"
       data-active={isActive}
       data-disabled={isDisabled}
+      data-clickable={isClickable}
       onDragOver={handleDragOver}
       onDragEnter={handleDragEnter}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
+      onClick={handleClick}
+      onKeyDown={handleKeyDown}
+      role={isClickable ? "button" : undefined}
+      tabIndex={isClickable ? 0 : undefined}
     >
       <div className="dropzone-inner">
         <p className="dropzone-title">Drop a video to corrupt</p>

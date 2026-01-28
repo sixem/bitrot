@@ -49,7 +49,6 @@ export const useEditorTopRowHeight = ({
       const layoutStyle = window.getComputedStyle(layoutEl);
       const shellPaddingTop = parsePx(shellStyle.paddingTop);
       const shellPaddingBottom = parsePx(shellStyle.paddingBottom);
-      const shellGap = readGap(shellStyle);
       const layoutRowGap = readGap(layoutStyle);
 
       const shellRect = shellEl.getBoundingClientRect();
@@ -57,7 +56,6 @@ export const useEditorTopRowHeight = ({
       const viewportHeight = window.innerHeight;
       const usableHeight = viewportHeight - shellTopOffset;
 
-      const headerHeight = headerEl.getBoundingClientRect().height;
       const infoHeight = infoEl.getBoundingClientRect().height;
       const railHeight = railEl.getBoundingClientRect().height;
 
@@ -65,8 +63,6 @@ export const useEditorTopRowHeight = ({
         usableHeight -
         shellPaddingTop -
         shellPaddingBottom -
-        headerHeight -
-        shellGap -
         infoHeight -
         layoutRowGap;
 

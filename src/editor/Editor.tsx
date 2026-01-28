@@ -4,6 +4,7 @@ import useGlobalVideoDrop from "@/hooks/useGlobalVideoDrop";
 import formatBytes from "@/utils/formatBytes";
 import formatDuration from "@/utils/formatDuration";
 import useVideoMetadata from "@/editor/useVideoMetadata";
+import useFramePreview from "@/editor/useFramePreview";
 import VideoPreview from "@/editor/VideoPreview";
 import ModeCard from "@/editor/ModeCard";
 import useFfmpegJob from "@/jobs/useFfmpegJob";
@@ -12,13 +13,16 @@ import {
   joinOutputPath,
   splitOutputPath
 } from "@/jobs/output";
+import { revealInFolder } from "@/system/reveal";
 import ExportModal, { type ExportSettings } from "@/editor/ExportModal";
+import ReceiptModal from "@/editor/ReceiptModal";
 import useEditorTopRowHeight from "@/editor/useEditorTopRowHeight";
 import {
   createModeConfigs,
   type ModeConfigMap,
   type ModeId
 } from "@/modes/definitions";
+import type { EncodingId } from "@/jobs/encoding";
 
 type EditorProps = {
   asset: VideoAsset;
@@ -34,10 +38,23 @@ const Editor = ({ asset, onReplace }: EditorProps) => {
     onVideoSelected: onReplace
   });
   const [isExportOpen, setIsExportOpen] = useState(false);
+  const [receipt, setReceipt] = useState<{
+    outputPath: string;
+    modeId: ModeId;
+    encodingId: EncodingId;
+  } | null>(null);
   const [modeId, setModeId] = useState<ModeId>("analog");
+  const lastAssetPathRef = useRef(asset.path);
   const [modeConfigs, setModeConfigs] = useState<ModeConfigMap>(() =>
     createModeConfigs()
   );
+  const previewControl = useFramePreview({
+    asset,
+    modeId,
+    modeConfig: modeConfigs[modeId],
+    metadata: metadataState.metadata,
+    isProcessing: job.status === "running"
+  });
   const statusLabel =
     metadataState.status === "loading"
       ? "Analyzing"
@@ -50,6 +67,21 @@ const Editor = ({ asset, onReplace }: EditorProps) => {
   const folderPath = asset.path
     ? asset.path.replace(/[/\\\\][^/\\\\]+$/, "")
     : "--";
+  const metadataDurationSeconds =
+    typeof metadataState.metadata?.durationSeconds === "number" &&
+    Number.isFinite(metadataState.metadata.durationSeconds)
+      ? metadataState.metadata.durationSeconds
+      : undefined;
+  const metadataSizeBytes =
+    typeof metadataState.metadata?.sizeBytes === "number" &&
+    Number.isFinite(metadataState.metadata.sizeBytes)
+      ? metadataState.metadata.sizeBytes
+      : undefined;
+  const metadataFps =
+    typeof metadataState.metadata?.fps === "number" &&
+    Number.isFinite(metadataState.metadata.fps)
+      ? metadataState.metadata.fps
+      : undefined;
   const defaultOutputPath = buildDefaultOutputPath(
     asset.path,
     modeId === "copy" ? undefined : "mp4"
@@ -64,6 +96,7 @@ const Editor = ({ asset, onReplace }: EditorProps) => {
       exportSettings.fileName,
       exportSettings.separator
     );
+  const canRevealOutput = job.status === "success" && outputPath.trim().length > 0;
   const jobStatusLabel =
     job.status === "running"
       ? "Running"
@@ -77,7 +110,33 @@ const Editor = ({ asset, onReplace }: EditorProps) => {
   const progressPercent = Number.isFinite(job.progress.percent)
     ? job.progress.percent
     : 0;
+  const outTimeSeconds =
+    typeof job.progress.outTimeSeconds === "number" &&
+    Number.isFinite(job.progress.outTimeSeconds)
+      ? job.progress.outTimeSeconds
+      : undefined;
+  const totalSizeBytes =
+    typeof job.progress.totalSizeBytes === "number" &&
+    Number.isFinite(job.progress.totalSizeBytes)
+      ? job.progress.totalSizeBytes
+      : undefined;
+  const elapsedSeconds =
+    typeof job.progress.elapsedSeconds === "number" &&
+    Number.isFinite(job.progress.elapsedSeconds)
+      ? job.progress.elapsedSeconds
+      : undefined;
+  const etaSeconds =
+    typeof job.progress.etaSeconds === "number" &&
+    Number.isFinite(job.progress.etaSeconds)
+      ? job.progress.etaSeconds
+      : undefined;
   const isExportDisabled = job.status === "running";
+  const lastRunRef = useRef<{
+    outputPath: string;
+    modeId: ModeId;
+    encodingId: EncodingId;
+  } | null>(null);
+  const lastStatusRef = useRef(job.status);
   const shellRef = useRef<HTMLElement>(null);
   const headerRef = useRef<HTMLElement>(null);
   const layoutRef = useRef<HTMLElement>(null);
@@ -93,8 +152,41 @@ const Editor = ({ asset, onReplace }: EditorProps) => {
   });
 
   useEffect(() => {
-    setExportSettings(splitOutputPath(defaultOutputPath));
+    setExportSettings((prev) => ({
+      ...splitOutputPath(defaultOutputPath),
+      // Preserve the user's encoding selection when the mode changes.
+      encodingId: prev.encodingId
+    }));
   }, [defaultOutputPath]);
+
+  useEffect(() => {
+    if (job.status === "running") {
+      setReceipt(null);
+    }
+
+    if (lastStatusRef.current !== "success" && job.status === "success") {
+      const fallback = lastRunRef.current;
+      const outputPathValue = job.outputPath ?? fallback?.outputPath ?? "";
+      setReceipt({
+        outputPath: outputPathValue,
+        modeId: fallback?.modeId ?? modeId,
+        encodingId: fallback?.encodingId ?? exportSettings.encodingId
+      });
+    }
+
+    lastStatusRef.current = job.status;
+  }, [job.status, job.outputPath, modeId, exportSettings.encodingId]);
+
+  useEffect(() => {
+    if (
+      lastAssetPathRef.current &&
+      lastAssetPathRef.current !== asset.path &&
+      job.status === "running"
+    ) {
+      cancel();
+    }
+    lastAssetPathRef.current = asset.path;
+  }, [asset.path, job.status, cancel]);
 
   const handleExportOpen = () => {
     setIsExportOpen(true);
@@ -104,15 +196,32 @@ const Editor = ({ asset, onReplace }: EditorProps) => {
     setIsExportOpen(false);
   };
 
-  const handleExportConfirm = (nextOutputPath: string) => {
+  const handleExportConfirm = (nextOutputPath: string, encodingId: EncodingId) => {
     setIsExportOpen(false);
+    lastRunRef.current = {
+      outputPath: nextOutputPath,
+      modeId,
+      encodingId
+    };
     run(
       asset,
       metadataState.metadata?.durationSeconds,
       nextOutputPath,
       modeId,
-      modeConfigs[modeId]
+      modeConfigs[modeId],
+      encodingId
     );
+  };
+
+  const handleRevealOutput = async () => {
+    if (!canRevealOutput) {
+      return;
+    }
+    try {
+      await revealInFolder(outputPath);
+    } catch {
+      // Best-effort: revealing the file should not block the editor.
+    }
   };
 
   const handleModeChange = (nextMode: ModeId) => {
@@ -132,22 +241,35 @@ const Editor = ({ asset, onReplace }: EditorProps) => {
 
   return (
     <main className="editor-shell" data-dragging={isDragging} ref={shellRef}>
-      <header className="editor-header" ref={headerRef}>
-        <div>
-          <p className="editor-eyebrow">Editor</p>
-          <h1 className="editor-title">{asset.name}</h1>
-        </div>
-      </header>
-
       <section className="editor-layout" ref={layoutRef}>
-        <article className="editor-card editor-preview-card">
+        <div className="editor-left">
+          <header className="editor-header" ref={headerRef}>
+            <div>
+              <p className="editor-eyebrow">BitRot Editor</p>
+              <h1 className="editor-title">{asset.name}</h1>
+            </div>
+          </header>
+          <article className="editor-card editor-preview-card">
           <VideoPreview
             asset={asset}
             fallbackDuration={metadataState.metadata?.durationSeconds}
+            preview={previewControl}
+            renderTimeSeconds={
+              job.status === "running" ? job.progress.outTimeSeconds : undefined
+            }
           />
-        </article>
+          </article>
+        </div>
 
         <aside className="editor-rail" ref={railRef}>
+          <ModeCard
+            value={modeId}
+            onChange={handleModeChange}
+            config={modeConfigs[modeId]}
+            onConfigChange={handleModeConfigChange}
+            disabled={job.status === "running"}
+          />
+
           <article className="editor-card editor-processing-card">
             <div className="editor-card-header">
               <h2 className="editor-card-title">Processing</h2>
@@ -158,9 +280,15 @@ const Editor = ({ asset, onReplace }: EditorProps) => {
             <div className="editor-kv">
               <div className="editor-kv-row">
                 <span className="editor-kv-label">Output</span>
-                <span className="editor-kv-value" title={outputPath}>
+                <button
+                  className="editor-kv-value editor-kv-value--action"
+                  type="button"
+                  onClick={handleRevealOutput}
+                  title={outputPath}
+                  disabled={!canRevealOutput}
+                >
                   {outputPath}
-                </span>
+                </button>
               </div>
               <div className="editor-kv-row">
                 <span className="editor-kv-label">Progress</span>
@@ -181,21 +309,23 @@ const Editor = ({ asset, onReplace }: EditorProps) => {
               <div className="editor-kv-row">
                 <span className="editor-kv-label">Time</span>
                 <span className="editor-kv-value">
-                  {Number.isFinite(job.progress.outTimeSeconds)
-                    ? formatDuration(job.progress.outTimeSeconds)
-                    : "--"}
+                  {outTimeSeconds !== undefined ? formatDuration(outTimeSeconds) : "--"}
                 </span>
               </div>
               <div className="editor-kv-row">
                 <span className="editor-kv-label">Frames</span>
                 <span className="editor-kv-value">
-                  {Number.isFinite(job.progress.frame) ? job.progress.frame : "--"}
+                  {typeof job.progress.frame === "number" &&
+                  Number.isFinite(job.progress.frame)
+                    ? job.progress.frame
+                    : "--"}
                 </span>
               </div>
               <div className="editor-kv-row">
                 <span className="editor-kv-label">FPS</span>
                 <span className="editor-kv-value">
-                  {Number.isFinite(job.progress.fps)
+                  {typeof job.progress.fps === "number" &&
+                  Number.isFinite(job.progress.fps)
                     ? job.progress.fps.toFixed(2)
                     : "--"}
                 </span>
@@ -203,9 +333,22 @@ const Editor = ({ asset, onReplace }: EditorProps) => {
               <div className="editor-kv-row">
                 <span className="editor-kv-label">Speed</span>
                 <span className="editor-kv-value">
-                  {Number.isFinite(job.progress.speed)
+                  {typeof job.progress.speed === "number" &&
+                  Number.isFinite(job.progress.speed)
                     ? `${job.progress.speed.toFixed(2)}x`
                     : "--"}
+                </span>
+              </div>
+              <div className="editor-kv-row">
+                <span className="editor-kv-label">Elapsed</span>
+                <span className="editor-kv-value">
+                  {elapsedSeconds !== undefined ? formatDuration(elapsedSeconds) : "--"}
+                </span>
+              </div>
+              <div className="editor-kv-row">
+                <span className="editor-kv-label">ETA</span>
+                <span className="editor-kv-value">
+                  {etaSeconds !== undefined ? formatDuration(etaSeconds) : "--"}
                 </span>
               </div>
               <div className="editor-kv-row">
@@ -217,9 +360,7 @@ const Editor = ({ asset, onReplace }: EditorProps) => {
               <div className="editor-kv-row">
                 <span className="editor-kv-label">Size</span>
                 <span className="editor-kv-value">
-                  {Number.isFinite(job.progress.totalSizeBytes)
-                    ? formatBytes(job.progress.totalSizeBytes)
-                    : "--"}
+                  {totalSizeBytes !== undefined ? formatBytes(totalSizeBytes) : "--"}
                 </span>
               </div>
             </div>
@@ -244,14 +385,6 @@ const Editor = ({ asset, onReplace }: EditorProps) => {
               <p className="editor-card-error">{job.error}</p>
             )}
           </article>
-
-          <ModeCard
-            value={modeId}
-            onChange={handleModeChange}
-            config={modeConfigs[modeId]}
-            onConfigChange={handleModeConfigChange}
-            disabled={job.status === "running"}
-          />
         </aside>
 
         <section className="editor-info" ref={infoRef}>
@@ -278,9 +411,7 @@ const Editor = ({ asset, onReplace }: EditorProps) => {
               <div className="editor-kv-row">
                 <span className="editor-kv-label">Size</span>
                 <span className="editor-kv-value">
-                  {metadataState.metadata?.sizeBytes
-                    ? formatBytes(metadataState.metadata.sizeBytes)
-                    : "--"}
+                  {metadataSizeBytes !== undefined ? formatBytes(metadataSizeBytes) : "--"}
                 </span>
               </div>
               <div className="editor-kv-row">
@@ -299,8 +430,8 @@ const Editor = ({ asset, onReplace }: EditorProps) => {
               <div className="editor-kv-row">
                 <span className="editor-kv-label">Duration</span>
                 <span className="editor-kv-value">
-                  {metadataState.metadata?.durationSeconds
-                    ? formatDuration(metadataState.metadata.durationSeconds)
+                  {metadataDurationSeconds !== undefined
+                    ? formatDuration(metadataDurationSeconds)
                     : "--"}
                 </span>
               </div>
@@ -315,9 +446,7 @@ const Editor = ({ asset, onReplace }: EditorProps) => {
               <div className="editor-kv-row">
                 <span className="editor-kv-label">FPS</span>
                 <span className="editor-kv-value">
-                  {metadataState.metadata?.fps
-                    ? metadataState.metadata.fps.toFixed(2)
-                    : "--"}
+                  {metadataFps !== undefined ? metadataFps.toFixed(2) : "--"}
                 </span>
               </div>
               <div className="editor-kv-row">
@@ -347,6 +476,13 @@ const Editor = ({ asset, onReplace }: EditorProps) => {
         onChange={setExportSettings}
         onClose={handleExportClose}
         onConfirm={handleExportConfirm}
+      />
+      <ReceiptModal
+        isOpen={!!receipt}
+        outputPath={receipt?.outputPath ?? ""}
+        modeId={receipt?.modeId ?? modeId}
+        encodingId={receipt?.encodingId ?? exportSettings.encodingId}
+        onClose={() => setReceipt(null)}
       />
     </main>
   );

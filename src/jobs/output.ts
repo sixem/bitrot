@@ -1,4 +1,6 @@
 // Output path helpers for export defaults and UI display.
+import { DEFAULT_ENCODING_ID, type EncodingId } from "@/jobs/encoding";
+
 const stripQuotes = (value: string) => value.trim().replace(/^"+|"+$/g, "");
 
 const getSeparator = (path: string) => (path.includes("\\") ? "\\" : "/");
@@ -7,6 +9,7 @@ export type OutputPathParts = {
   folder: string;
   fileName: string;
   separator: string;
+  encodingId: EncodingId;
 };
 
 export const buildDefaultOutputPath = (
@@ -46,7 +49,8 @@ export const splitOutputPath = (outputPath: string): OutputPathParts => {
   return {
     folder,
     fileName,
-    separator
+    separator,
+    encodingId: DEFAULT_ENCODING_ID
   };
 };
 

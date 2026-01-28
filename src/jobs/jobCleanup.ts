@@ -1,0 +1,113 @@
+import { invoke } from "@tauri-apps/api/core";
+import type { ModeId } from "@/modes/definitions";
+import { splitOutputPath, joinOutputPath } from "@/jobs/output";
+import { getDatamoshTempPaths } from "@/jobs/datamoshRunner";
+import makeDebug from "@/utils/debug";
+
+type CleanupEntry = {
+  outputPath: string;
+  tempPaths: string[];
+  preserveOutput: boolean;
+};
+
+const debug = makeDebug("jobs:cleanup");
+const activeEntries = new Map<string, CleanupEntry>();
+
+const buildPixelsortTempPath = (outputPath: string) => {
+  const { folder, fileName, separator } = splitOutputPath(outputPath);
+  const dotIndex = fileName.lastIndexOf(".");
+  const stem = dotIndex > 0 ? fileName.slice(0, dotIndex) : fileName || "pixelsort";
+  const tempFile = `${stem}.pixelsort.video.mp4`;
+  return joinOutputPath(folder, tempFile, separator);
+};
+
+const buildCleanupEntry = (outputPath: string, modeId?: ModeId): CleanupEntry => {
+  const tempPaths: string[] = [];
+  if (modeId === "datamosh") {
+    const temps = getDatamoshTempPaths(outputPath);
+    tempPaths.push(temps.tempPath, temps.rawPath, temps.moshedPath, temps.remuxPath);
+  } else if (modeId === "pixelsort") {
+    tempPaths.push(buildPixelsortTempPath(outputPath));
+  }
+
+  return {
+    outputPath,
+    tempPaths: tempPaths.filter(Boolean),
+    preserveOutput: false
+  };
+};
+
+const uniquePaths = (paths: string[]) => {
+  const seen = new Set<string>();
+  return paths.filter((path) => {
+    const trimmed = path.trim();
+    if (!trimmed || seen.has(trimmed)) {
+      return false;
+    }
+    seen.add(trimmed);
+    return true;
+  });
+};
+
+const cleanupPaths = async (paths: string[]) => {
+  const sanitized = uniquePaths(paths);
+  if (sanitized.length === 0) {
+    return true;
+  }
+  try {
+    await invoke("cleanup_files", { paths: sanitized });
+    return true;
+  } catch (error) {
+    debug("cleanup failed: %O", error);
+    return false;
+  }
+};
+
+export const registerJobCleanup = (outputPath: string, modeId?: ModeId) => {
+  const trimmed = outputPath.trim();
+  if (!trimmed) {
+    return null;
+  }
+  const entry = buildCleanupEntry(trimmed, modeId);
+  activeEntries.set(trimmed, entry);
+  return entry;
+};
+
+export const cleanupJob = async (
+  outputPath: string,
+  options: { keepOutput?: boolean }
+) => {
+  const entry = activeEntries.get(outputPath.trim());
+  if (!entry) {
+    return;
+  }
+  const keepOutput = options.keepOutput ?? false;
+  const paths = keepOutput
+    ? entry.tempPaths
+    : [entry.outputPath, ...entry.tempPaths];
+  const success = await cleanupPaths(paths);
+  if (keepOutput) {
+    if (success) {
+      activeEntries.delete(entry.outputPath);
+    } else {
+      entry.preserveOutput = true;
+    }
+    return;
+  }
+  if (success) {
+    activeEntries.delete(entry.outputPath);
+  }
+};
+
+export const cleanupAllJobs = async () => {
+  const entries = [...activeEntries.values()];
+  activeEntries.clear();
+  const paths = entries.flatMap((entry) =>
+    entry.preserveOutput
+      ? entry.tempPaths
+      : [entry.outputPath, ...entry.tempPaths]
+  );
+  await cleanupPaths(paths);
+};
+
+export const hasActiveJobs = () => activeEntries.size > 0;

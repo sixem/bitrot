@@ -9,6 +9,8 @@ export type JobProgress = {
   bitrate?: string;
   outTimeSeconds?: number;
   totalSizeBytes?: number;
+  elapsedSeconds?: number;
+  etaSeconds?: number;
 };
 
 export type JobState = {

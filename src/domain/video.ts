@@ -21,6 +21,9 @@ export const isSupportedVideoPath = (path: string) => {
   return SUPPORTED_VIDEO_EXTENSIONS.some((ext) => lowerName.endsWith(ext));
 };
 
+export const videoExtensions = () =>
+  SUPPORTED_VIDEO_EXTENSIONS.map((ext) => ext.replace(".", ""));
+
 export const createVideoAssetFromPath = (path: string): VideoAsset => ({
   id: createId(),
   path,
@@ -28,4 +31,4 @@ export const createVideoAssetFromPath = (path: string): VideoAsset => ({
 });
 
 export const videoExtensionsLabel = () =>
-  SUPPORTED_VIDEO_EXTENSIONS.map((ext) => ext.replace(".", "")).join(", ");
+  videoExtensions().join(", ");

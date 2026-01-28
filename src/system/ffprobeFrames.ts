@@ -1,5 +1,5 @@
-// ffprobe wrapper for extracting per-frame data from the ffmpeg sidecar.
-import { Command } from "@tauri-apps/plugin-shell";
+// ffprobe wrapper for extracting per-frame data from the resolved ffprobe binary.
+import { executeWithFallback } from "@/system/shellCommand";
 
 export type FfprobeFrame = {
   key_frame?: number;
@@ -16,8 +16,6 @@ export type FfprobeFramesResult = {
   };
 };
 
-const FFPROBE_SIDECAR = "binaries/ffprobe";
-
 const parseJson = (raw: string) => {
   try {
     return JSON.parse(raw) as FfprobeFramesResult;
@@ -33,7 +31,7 @@ export const probeFrames = async (filePath: string) => {
     throw new Error("ffprobe received an empty file path.");
   }
 
-  const command = Command.sidecar(FFPROBE_SIDECAR, [
+  const { output } = await executeWithFallback("ffprobe", [
     "-v",
     "error",
     "-select_streams",
@@ -45,8 +43,6 @@ export const probeFrames = async (filePath: string) => {
     "--",
     normalizedPath
   ]);
-
-  const output = await command.execute();
   const raw = [output.stdout, output.stderr].filter(Boolean).join("\n").trim();
   const parsed = raw ? parseJson(raw) : null;
 

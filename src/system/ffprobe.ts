@@ -1,5 +1,5 @@
-import { Command } from "@tauri-apps/plugin-shell";
 import makeDebug from "@/utils/debug";
+import { executeWithFallback } from "@/system/shellCommand";
 
 export type VideoMetadata = {
   durationSeconds?: number;
@@ -10,7 +10,6 @@ export type VideoMetadata = {
   sizeBytes?: number;
 };
 
-const FFPROBE_SIDECAR = "binaries/ffprobe";
 const debug = makeDebug("system:ffprobe");
 
 type FfprobeStream = {
@@ -69,8 +68,8 @@ const extractMetadata = (payload: FfprobeResult): VideoMetadata => {
 
 const runFfprobe = async (args: string[]) => {
   debug("ffprobe args: %o", args);
-  const command = Command.sidecar(FFPROBE_SIDECAR, args);
-  const output = await command.execute();
+  const { output, source } = await executeWithFallback("ffprobe", args);
+  debug("ffprobe source: %s", source);
   const raw = [output.stdout, output.stderr].filter(Boolean).join("\n").trim();
   return { output, raw };
 };

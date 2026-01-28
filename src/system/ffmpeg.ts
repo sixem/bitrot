@@ -1,4 +1,5 @@
-import { Command } from "@tauri-apps/plugin-shell";
+import { executeWithFallback, type CommandSource } from "@/system/shellCommand";
+import makeDebug from "@/utils/debug";
 
 export type FfmpegStatus = {
   state: "checking" | "ready" | "missing";
@@ -6,10 +7,10 @@ export type FfmpegStatus = {
   details?: string;
   ffmpegVersion?: string;
   ffprobeVersion?: string;
+  source?: CommandSource;
 };
 
-const FFMPEG_SIDECAR = "binaries/ffmpeg";
-const FFPROBE_SIDECAR = "binaries/ffprobe";
+const debug = makeDebug("system:ffmpeg");
 
 const getFirstLine = (value: string) =>
   value.split(/\r?\n/).map((line) => line.trim()).find(Boolean) ?? "";
@@ -32,10 +33,9 @@ const findVersionLine = (output: string, prefix: string) =>
     .map((line) => line.trim())
     .find((line) => line.toLowerCase().startsWith(prefix.toLowerCase())) ?? "";
 
-const runSidecar = async (name: string, expectedPrefix: string) => {
+const runProgram = async (program: "ffmpeg" | "ffprobe", expectedPrefix: string) => {
   try {
-    const command = Command.sidecar(name, ["-version"]);
-    const output = await command.execute();
+    const { output, source } = await executeWithFallback(program, ["-version"]);
     const combinedOutput = [output.stdout, output.stderr]
       .filter(Boolean)
       .join("\n");
@@ -50,24 +50,27 @@ const runSidecar = async (name: string, expectedPrefix: string) => {
 
     return {
       ok: true,
-      version: versionLine || getFirstLine(combinedOutput)
+      version: versionLine || getFirstLine(combinedOutput),
+      source
     } as const;
   } catch (error) {
     return { ok: false, error: formatError(error) } as const;
   }
 };
 
+// Checks FFmpeg availability using local -> sidecar -> PATH resolution.
 export const checkFfmpegSidecars = async (): Promise<FfmpegStatus> => {
   const [ffmpegResult, ffprobeResult] = await Promise.all([
-    runSidecar(FFMPEG_SIDECAR, "ffmpeg version"),
-    runSidecar(FFPROBE_SIDECAR, "ffprobe version")
+    runProgram("ffmpeg", "ffmpeg version"),
+    runProgram("ffprobe", "ffprobe version")
   ]);
 
   if (!ffmpegResult.ok || !ffprobeResult.ok) {
+    debug("ffmpeg check failed: %o %o", ffmpegResult, ffprobeResult);
     return {
       state: "missing",
       message:
-        "FFmpeg sidecar binaries are missing or failed to launch. Install them to continue.",
+        "FFmpeg not found. Place binaries next to the app, ship sidecars, or add them to PATH.",
       details: [
         !ffmpegResult.ok ? `ffmpeg: ${ffmpegResult.error}` : null,
         !ffprobeResult.ok ? `ffprobe: ${ffprobeResult.error}` : null
@@ -77,10 +80,12 @@ export const checkFfmpegSidecars = async (): Promise<FfmpegStatus> => {
     };
   }
 
+  const source = ffmpegResult.source ?? ffprobeResult.source;
   return {
     state: "ready",
-    message: "FFmpeg is ready.",
+    message: source ? `FFmpeg is ready (${source}).` : "FFmpeg is ready.",
     ffmpegVersion: ffmpegResult.version,
-    ffprobeVersion: ffprobeResult.version
+    ffprobeVersion: ffprobeResult.version,
+    source
   };
 };

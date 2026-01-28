@@ -1,12 +1,24 @@
 // Datamosh pipeline: normalize to MPEG-4, detect cuts, then drop intra VOPs.
-import { Command } from "@tauri-apps/plugin-shell";
 import { invoke } from "@tauri-apps/api/core";
 import type { VideoAsset } from "@/domain/video";
 import { createFfmpegProgressParser } from "@/jobs/ffmpegProgress";
 import { joinOutputPath, splitOutputPath } from "@/jobs/output";
 import type { JobProgress } from "@/jobs/types";
+import {
+  DEFAULT_ENCODING_ID,
+  buildVideoEncodingArgs,
+  getEncodingPreset,
+  type EncodingId,
+  type EncodingPreset
+} from "@/jobs/encoding";
 import type { DatamoshConfig } from "@/modes/datamosh";
 import { probeVideo, probeVideoExtradata } from "@/system/ffprobe";
+import {
+  executeWithFallback,
+  spawnWithFallback,
+  type CommandHandle,
+  type CommandSource
+} from "@/system/shellCommand";
 import makeDebug from "@/utils/debug";
 
 type DatamoshCallbacks = {
@@ -21,7 +33,6 @@ export type DatamoshRunHandle = {
   cancel: () => Promise<void>;
 };
 
-const FFMPEG_SIDECAR = "binaries/ffmpeg";
 const debug = makeDebug("jobs:datamosh");
 
 const sanitizePath = (value: string) => value.trim().replace(/^"+|"+$/g, "");
@@ -127,8 +138,8 @@ const detectSceneCuts = async (inputPath: string, threshold: number) => {
   ];
   debug("detectSceneCuts start (threshold=%d)", threshold);
   debug("detectSceneCuts args: %o", args);
-  const command = Command.sidecar(FFMPEG_SIDECAR, args);
-  const output = await command.execute();
+  const { output, source } = await executeWithFallback("ffmpeg", args);
+  debug("detectSceneCuts source: %s", source);
   const raw = [output.stdout, output.stderr].filter(Boolean).join("\n");
 
   if (output.code !== 0) {
@@ -199,6 +210,13 @@ const buildTempMp4Path = (outputPath: string) => {
   return joinOutputPath(folder, `${baseName}.prepped.mp4`, separator);
 };
 
+export const getDatamoshTempPaths = (outputPath: string) => ({
+  tempPath: buildTempMp4Path(outputPath),
+  rawPath: buildRawPath(outputPath, "raw", "m4v"),
+  moshedPath: buildRawPath(outputPath, "moshed", "m4v"),
+  remuxPath: buildRawPath(outputPath, "remuxed", "mp4")
+});
+
 const buildRemuxArgs = (
   videoPath: string,
   audioSourcePath: string,
@@ -261,10 +279,12 @@ const buildCompatibilityTranscodeArgs = (
   audioSourcePath: string,
   outputPath: string,
   fps: number,
-  requestedGop: number
+  requestedGop: number,
+  encoding: EncodingPreset
 ) => {
   const gop = clampH264Gop(fps, requestedGop);
   const x264Params = `keyint=${gop}:min-keyint=${gop}:scenecut=0:open-gop=0`;
+  const isX264 = encoding.encoder === "libx264";
 
   const args = [
     "-y",
@@ -284,12 +304,7 @@ const buildCompatibilityTranscodeArgs = (
     "1:a?",
     "-vf",
     SAFE_SCALE_FILTER,
-    "-c:v",
-    "libx264",
-    "-preset",
-    "veryfast",
-    "-crf",
-    "20",
+    ...buildVideoEncodingArgs(encoding),
     "-pix_fmt",
     "yuv420p",
     "-r",
@@ -304,8 +319,6 @@ const buildCompatibilityTranscodeArgs = (
     "0",
     "-bf",
     "0",
-    "-x264-params",
-    x264Params,
     "-c:a",
     "aac",
     "-b:a",
@@ -317,6 +330,10 @@ const buildCompatibilityTranscodeArgs = (
     "-nostats",
     outputPath
   ];
+
+  if (isX264) {
+    args.push("-x264-params", x264Params);
+  }
 
   return args;
 };
@@ -352,6 +369,7 @@ export const runDatamoshJob = async (
   outputPath: string,
   durationSeconds: number | undefined,
   config: DatamoshConfig,
+  encodingId: EncodingId,
   callbacks: DatamoshCallbacks
 ): Promise<DatamoshRunHandle> => {
   const inputPath = sanitizePath(asset.path);
@@ -368,16 +386,19 @@ export const runDatamoshJob = async (
   );
   const threshold = Math.max(0, Math.min(1, config.sceneThreshold));
   const moshLength = Math.max(0, config.moshLengthSeconds);
+  const resolvedEncodingId = encodingId ?? DEFAULT_ENCODING_ID;
+  const encodingPreset = getEncodingPreset(resolvedEncodingId);
 
   debug("runDatamoshJob start");
   debug("paths: input=%s output=%s temp=%s", inputPath, cleanOutput, tempPath);
   debug(
-    "config: intensity=%d gop=%d threshold=%d moshLength=%d seed=%d",
+    "config: intensity=%d gop=%d threshold=%d moshLength=%d seed=%d encoding=%s",
     config.intensity,
     gopSize,
     threshold,
     moshLength,
-    config.seed
+    config.seed,
+    resolvedEncodingId
   );
   callbacks.onProgress({ percent: 0 });
 
@@ -389,12 +410,11 @@ export const runDatamoshJob = async (
   try {
     const cuts = await detectSceneCuts(inputPath, threshold);
     debug("scene cuts: %o", cuts.slice(0, 12));
-    const normalizeCommand = Command.sidecar(
-      FFMPEG_SIDECAR,
-      buildNormalizeArgs(inputPath, tempPath, gopSize, cuts)
-    );
-    debug("normalize args: %o", buildNormalizeArgs(inputPath, tempPath, gopSize, cuts));
-    const normalizeOutput = await normalizeCommand.execute();
+    const normalizeArgs = buildNormalizeArgs(inputPath, tempPath, gopSize, cuts);
+    debug("normalize args: %o", normalizeArgs);
+    const { output: normalizeOutput, source: normalizeSource } =
+      await executeWithFallback("ffmpeg", normalizeArgs);
+    debug("normalize source: %s", normalizeSource);
     emitCommandOutput("normalize", normalizeOutput, callbacks);
     if (normalizeOutput.code !== 0) {
       const raw = [normalizeOutput.stdout, normalizeOutput.stderr]
@@ -438,8 +458,9 @@ export const runDatamoshJob = async (
       rawPath
     ];
     debug("extract args: %o", extractArgs);
-    const extractCommand = Command.sidecar(FFMPEG_SIDECAR, extractArgs);
-    const extractOutput = await extractCommand.execute();
+    const { output: extractOutput, source: extractSource } =
+      await executeWithFallback("ffmpeg", extractArgs);
+    debug("extract source: %s", extractSource);
     emitCommandOutput("extract", extractOutput, callbacks);
     if (extractOutput.code !== 0) {
       const raw = [extractOutput.stdout, extractOutput.stderr]
@@ -473,7 +494,9 @@ export const runDatamoshJob = async (
       false
     );
     debug("remux (mpeg4 copy) args: %o", remuxArgs);
-    const remuxOutput = await Command.sidecar(FFMPEG_SIDECAR, remuxArgs).execute();
+    const { output: remuxOutput, source: remuxSource } =
+      await executeWithFallback("ffmpeg", remuxArgs);
+    debug("remux (mpeg4 copy) source: %s", remuxSource);
     emitCommandOutput("remux", remuxOutput, callbacks);
     if (remuxOutput.code !== 0) {
       const raw = [remuxOutput.stdout, remuxOutput.stderr]
@@ -493,53 +516,56 @@ export const runDatamoshJob = async (
     tempPath,
     cleanOutput,
     fps,
-    gopSize
+    gopSize,
+    encodingPreset
   );
   debug("compat transcode args: %o", args);
-  const command = Command.sidecar(FFMPEG_SIDECAR, args);
   const feedProgress = createFfmpegProgressParser(durationForProgress, (progress) => {
     callbacks.onProgress(progress);
   });
 
-  command.stdout.on("data", (line) => {
-    if (typeof line === "string") {
-      feedProgress(line);
-    }
-  });
+  const bindHandlers = (command: CommandHandle, source: CommandSource) => {
+    debug("compat transcode source: %s", source);
+    command.stdout.on("data", (line) => {
+      if (typeof line === "string") {
+        feedProgress(line);
+      }
+    });
 
-  command.stderr.on("data", (line) => {
-    if (typeof line === "string" && line.trim().length > 0) {
-      callbacks.onLog(line.trim());
-      debug("compat transcode stderr: %s", line.trim());
-    }
-  });
+    command.stderr.on("data", (line) => {
+      if (typeof line === "string" && line.trim().length > 0) {
+        callbacks.onLog(line.trim());
+        debug("compat transcode stderr: %s", line.trim());
+      }
+    });
 
-  command.on("error", (error) => {
-    const unknownError = error as unknown;
-    const message =
-      typeof unknownError === "string"
-        ? unknownError
-        : unknownError instanceof Error
-          ? unknownError.message
-          : String(unknownError ?? "Unknown ffmpeg error");
-    debug("compat transcode error: %O", unknownError);
-    callbacks.onError(message);
-    void cleanupTemps([tempPath, rawPath, moshedPath, remuxPath]);
-  });
+    command.on("error", (error) => {
+      const unknownError = error as unknown;
+      const message =
+        typeof unknownError === "string"
+          ? unknownError
+          : unknownError instanceof Error
+            ? unknownError.message
+            : String(unknownError ?? "Unknown ffmpeg error");
+      debug("compat transcode error: %O", unknownError);
+      callbacks.onError(message);
+      void cleanupTemps([tempPath, rawPath, moshedPath, remuxPath]);
+    });
 
-  command.on("close", ({ code, signal }) => {
-    debug("compat transcode close: code=%s signal=%s", code, signal);
-    const signalValue =
-      typeof signal === "string"
-        ? signal
-        : signal === null || signal === undefined
-          ? null
-          : String(signal);
-    callbacks.onClose(code ?? null, signalValue);
-    void cleanupTemps([tempPath, rawPath, moshedPath, remuxPath]);
-  });
+    command.on("close", ({ code, signal }) => {
+      debug("compat transcode close: code=%s signal=%s", code, signal);
+      const signalValue =
+        typeof signal === "string"
+          ? signal
+          : signal === null || signal === undefined
+            ? null
+            : String(signal);
+      callbacks.onClose(code ?? null, signalValue);
+      void cleanupTemps([tempPath, rawPath, moshedPath, remuxPath]);
+    });
+  };
 
-  const child = await command.spawn();
+  const { child } = await spawnWithFallback("ffmpeg", args, bindHandlers);
 
   return {
     outputPath: cleanOutput,

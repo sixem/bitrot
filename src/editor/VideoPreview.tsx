@@ -2,10 +2,13 @@
 import type { VideoAsset } from "@/domain/video";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import formatDuration from "@/utils/formatDuration";
+import type { FramePreviewControl } from "@/editor/useFramePreview";
 
 type VideoPreviewProps = {
   asset: VideoAsset;
   fallbackDuration?: number;
+  preview?: FramePreviewControl;
+  renderTimeSeconds?: number;
 };
 
 // Strip quotes that sometimes wrap drag-drop paths.
@@ -22,7 +25,12 @@ const clampTime = (time: number, duration?: number) => {
 };
 
 // Video preview player with custom scrub + skip controls.
-const VideoPreview = ({ asset, fallbackDuration }: VideoPreviewProps) => {
+const VideoPreview = ({
+  asset,
+  fallbackDuration,
+  preview,
+  renderTimeSeconds
+}: VideoPreviewProps) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState<number | undefined>(undefined);
@@ -72,6 +80,9 @@ const VideoPreview = ({ asset, fallbackDuration }: VideoPreviewProps) => {
     const video = videoRef.current;
     if (!video) {
       return;
+    }
+    if (preview?.isActive && !preview.isProcessing) {
+      preview.onClear();
     }
     const clamped = clampTime(nextTime, resolvedDuration);
     video.currentTime = clamped;
@@ -131,14 +142,52 @@ const VideoPreview = ({ asset, fallbackDuration }: VideoPreviewProps) => {
     setIsReady(false);
   };
 
+  // Keep the scrubber in sync with render progress when previewing a job.
+  useEffect(() => {
+    if (!preview?.isProcessing) {
+      return;
+    }
+    if (typeof renderTimeSeconds !== "number" || !Number.isFinite(renderTimeSeconds)) {
+      return;
+    }
+    const clamped = clampTime(renderTimeSeconds, resolvedDuration);
+    setCurrentTime(clamped);
+  }, [preview?.isProcessing, renderTimeSeconds, resolvedDuration]);
+
   const scrubValue = Number.isFinite(resolvedDuration)
     ? clampTime(currentTime, resolvedDuration)
     : 0;
   const volumePercent = Math.round(volume * 100);
+  const isPreviewEnabled = !!preview?.isEnabled;
+  const showPreviewToggle = isPreviewEnabled && !isPlaying && isReady && !error;
+  const isPreviewActive = !!preview?.isActive;
+  const showPreviewFrame = isPreviewActive && (!isPlaying || !!preview?.isProcessing);
+  const previewLabel = preview?.label ?? "Preview frame";
+  const previewDisabled = !!preview?.isProcessing || !!preview?.isLoading;
+  const controlsDisabled = !!preview?.isProcessing || !!error;
+  const showPreviewStatus = isPreviewEnabled && (!isPlaying || !!preview?.isProcessing);
+
+  const handlePreviewToggle = () => {
+    if (!preview || previewDisabled) {
+      return;
+    }
+    if (preview.isActive && !preview.isProcessing) {
+      preview.onClear();
+      return;
+    }
+    preview.onRequest(currentTime);
+  };
 
   return (
     <div className="preview-player" data-ready={isReady}>
       <div className="preview-surface">
+        {showPreviewFrame && preview?.previewUrl && (
+          <img
+            className="preview-frame"
+            src={preview.previewUrl}
+            alt="Preview frame"
+          />
+        )}
         {sourceUrl ? (
           <video
             ref={videoRef}
@@ -160,6 +209,28 @@ const VideoPreview = ({ asset, fallbackDuration }: VideoPreviewProps) => {
           <div className="preview-overlay">Preparing preview...</div>
         )}
         {error && <div className="preview-overlay preview-overlay--error">{error}</div>}
+        {showPreviewStatus && preview?.error && (
+          <div className="preview-overlay preview-overlay--error">{preview.error}</div>
+        )}
+        {showPreviewStatus && preview?.isLoading && (
+          <div className="preview-overlay">Rendering preview frame...</div>
+        )}
+        {showPreviewStatus && preview?.isProcessing && !preview.previewUrl && (
+          <div className="preview-overlay">Waiting for preview...</div>
+        )}
+        {showPreviewToggle && preview && (
+          <div className="preview-corner">
+            <button
+              className="preview-toggle"
+              type="button"
+              onClick={handlePreviewToggle}
+              data-active={isPreviewActive}
+              disabled={previewDisabled}
+            >
+              {previewLabel}
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="preview-toolbar">
@@ -168,7 +239,7 @@ const VideoPreview = ({ asset, fallbackDuration }: VideoPreviewProps) => {
             className="preview-button"
             type="button"
             onClick={handleTogglePlayback}
-            disabled={!sourceUrl || !!error}
+            disabled={!sourceUrl || controlsDisabled}
           >
             {isPlaying ? "Pause" : "Play"}
           </button>
@@ -176,7 +247,7 @@ const VideoPreview = ({ asset, fallbackDuration }: VideoPreviewProps) => {
             className="preview-button"
             type="button"
             onClick={() => stepBy(-5)}
-            disabled={!resolvedDuration || !!error}
+            disabled={!resolvedDuration || controlsDisabled}
           >
             -5s
           </button>
@@ -184,7 +255,7 @@ const VideoPreview = ({ asset, fallbackDuration }: VideoPreviewProps) => {
             className="preview-button"
             type="button"
             onClick={() => stepBy(5)}
-            disabled={!resolvedDuration || !!error}
+            disabled={!resolvedDuration || controlsDisabled}
           >
             +5s
           </button>
@@ -204,7 +275,7 @@ const VideoPreview = ({ asset, fallbackDuration }: VideoPreviewProps) => {
         step={0.01}
         value={scrubValue}
         onChange={(event) => seekTo(Number(event.target.value))}
-        disabled={!resolvedDuration || !!error}
+        disabled={!resolvedDuration || controlsDisabled}
         aria-label="Scrub preview"
       />
 
@@ -218,7 +289,7 @@ const VideoPreview = ({ asset, fallbackDuration }: VideoPreviewProps) => {
           step={1}
           value={volumePercent}
           onChange={(event) => setVolume(Number(event.target.value) / 100)}
-          disabled={!sourceUrl || !!error}
+          disabled={!sourceUrl || controlsDisabled}
           aria-label="Preview volume"
         />
         <span className="preview-audio-value">{volumePercent}%</span>
