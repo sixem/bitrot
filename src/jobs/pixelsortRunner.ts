@@ -2,9 +2,11 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { VideoAsset } from "@/domain/video";
 import type { JobProgress } from "@/jobs/types";
+import { pathsMatch } from "@/jobs/output";
 import { probeVideo } from "@/system/ffprobe";
 import {
   DEFAULT_ENCODING_ID,
+  estimateBitrateCapKbps,
   getEncodingPreset,
   type EncodingId
 } from "@/jobs/encoding";
@@ -162,6 +164,11 @@ export const runPixelsortJob = async (
 ): Promise<PixelsortRunHandle> => {
   const inputPath = sanitizePath(asset.path);
   const cleanOutput = sanitizePath(outputPath);
+  if (pathsMatch(inputPath, cleanOutput)) {
+    throw new Error(
+      "Output path matches the input file. Choose a different output name."
+    );
+  }
   const jobId = createJobId();
 
   debug("runPixelsortJob start: input=%s output=%s", inputPath, cleanOutput);
@@ -186,6 +193,11 @@ export const runPixelsortJob = async (
   }
 
   const encoding = getEncodingPreset(encodingId ?? DEFAULT_ENCODING_ID);
+  const bitrateCapKbps = estimateBitrateCapKbps(
+    metadata.sizeBytes,
+    metadata.durationSeconds,
+    encoding
+  );
   callbacks.onProgress({ percent: 0 });
 
   const stopListening = await attachPixelsortListeners(jobId, callbacks);
@@ -207,7 +219,8 @@ export const runPixelsortJob = async (
       encoder: encoding.encoder,
       preset: encoding.preset,
       crf: encoding.crf,
-      cq: encoding.cq
+      cq: encoding.cq,
+      maxBitrateKbps: bitrateCapKbps
     }
   });
 

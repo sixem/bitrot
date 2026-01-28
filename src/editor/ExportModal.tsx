@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type MouseEvent } from "react";
 import { createPortal } from "react-dom";
-import { joinOutputPath, type OutputPathParts } from "@/jobs/output";
+import { joinOutputPath, pathsMatch, type OutputPathParts } from "@/jobs/output";
 import {
   DEFAULT_ENCODING_ID,
   ENCODING_PRESETS,
@@ -9,22 +9,34 @@ import {
   type EncodingPreset,
   type EncodingId
 } from "@/jobs/encoding";
+import { pathExists } from "@/system/pathExists";
 
 export type ExportSettings = OutputPathParts;
 
 type ExportModalProps = {
   isOpen: boolean;
   settings: ExportSettings;
+  inputPath?: string;
   onChange: (next: ExportSettings) => void;
   onClose: () => void;
   onConfirm: (outputPath: string, encodingId: EncodingId) => void;
 };
 
 // Export settings modal used before running a render job.
-const ExportModal = ({ isOpen, settings, onChange, onClose, onConfirm }: ExportModalProps) => {
+const ExportModal = ({
+  isOpen,
+  settings,
+  inputPath,
+  onChange,
+  onClose,
+  onConfirm
+}: ExportModalProps) => {
   const shouldCloseRef = useRef(false);
   const [availablePresets, setAvailablePresets] =
     useState<EncodingPreset[]>(ENCODING_PRESETS);
+  const [overwritePromptPath, setOverwritePromptPath] = useState<string | null>(null);
+  const [missingFolderPath, setMissingFolderPath] = useState<string | null>(null);
+  const [isCheckingOverwrite, setIsCheckingOverwrite] = useState(false);
 
   useEffect(() => {
     if (!isOpen) {
@@ -66,6 +78,14 @@ const ExportModal = ({ isOpen, settings, onChange, onClose, onConfirm }: ExportM
     };
   }, [isOpen, settings.encodingId, onChange, settings]);
 
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+    setOverwritePromptPath(null);
+    setMissingFolderPath(null);
+  }, [isOpen, inputPath, settings.folder, settings.fileName, settings.separator]);
+
   if (!isOpen) {
     return null;
   }
@@ -75,8 +95,17 @@ const ExportModal = ({ isOpen, settings, onChange, onClose, onConfirm }: ExportM
     settings.fileName,
     settings.separator
   );
+  const folderPath = settings.folder.trim();
   const isValid = settings.fileName.trim().length > 0;
+  const outputMatchesInput =
+    !!inputPath && !!outputPath && pathsMatch(inputPath, outputPath);
   const encodingPreset = getEncodingPreset(settings.encodingId);
+  const missingFolderWarning =
+    missingFolderPath === ""
+      ? "Output folder is required. Choose a destination folder."
+      : missingFolderPath === folderPath
+        ? "Output folder does not exist. Choose an existing folder."
+        : null;
 
   const handleBackdropMouseDown = (event: MouseEvent<HTMLDivElement>) => {
     shouldCloseRef.current = event.target === event.currentTarget;
@@ -89,6 +118,45 @@ const ExportModal = ({ isOpen, settings, onChange, onClose, onConfirm }: ExportM
     if (shouldClose) {
       onClose();
     }
+  };
+
+  // Confirm export after validating the output folder and overwrite state.
+  const handleConfirm = async () => {
+    if (!isValid || isCheckingOverwrite || outputMatchesInput) {
+      return;
+    }
+
+    if (overwritePromptPath === outputPath) {
+      onConfirm(outputPath, settings.encodingId);
+      return;
+    }
+
+    setIsCheckingOverwrite(true);
+    // Verify destination folder exists before checking for overwrite.
+    if (!folderPath) {
+      setMissingFolderPath("");
+      setIsCheckingOverwrite(false);
+      return;
+    }
+    const folderExists = await pathExists(folderPath);
+    if (!folderExists) {
+      setMissingFolderPath(folderPath);
+      setIsCheckingOverwrite(false);
+      return;
+    }
+    if (missingFolderPath) {
+      setMissingFolderPath(null);
+    }
+
+    const exists = await pathExists(outputPath);
+    setIsCheckingOverwrite(false);
+
+    if (exists) {
+      setOverwritePromptPath(outputPath);
+      return;
+    }
+
+    onConfirm(outputPath, settings.encodingId);
   };
 
   return createPortal(
@@ -161,6 +229,22 @@ const ExportModal = ({ isOpen, settings, onChange, onClose, onConfirm }: ExportM
           <p className="export-path" title={outputPath}>
             {outputPath || "Output path will appear here."}
           </p>
+          {outputMatchesInput && (
+            <p className="export-warning export-warning--error">
+              Output matches the source file. Choose a different filename to avoid
+              overwriting the original.
+            </p>
+          )}
+          {!outputMatchesInput && missingFolderWarning && (
+            <p className="export-warning export-warning--error">
+              {missingFolderWarning}
+            </p>
+          )}
+          {!outputMatchesInput && overwritePromptPath === outputPath && (
+            <p className="export-warning">
+              Output already exists. Click Overwrite to replace it.
+            </p>
+          )}
         </div>
         <div className="export-actions">
           <button className="modal-button" type="button" onClick={onClose}>
@@ -169,10 +253,10 @@ const ExportModal = ({ isOpen, settings, onChange, onClose, onConfirm }: ExportM
           <button
             className="modal-button modal-button--primary"
             type="button"
-            onClick={() => onConfirm(outputPath, settings.encodingId)}
-            disabled={!isValid}
+            onClick={handleConfirm}
+            disabled={!isValid || isCheckingOverwrite || outputMatchesInput}
           >
-            Export
+            {overwritePromptPath === outputPath ? "Overwrite" : "Export"}
           </button>
         </div>
       </div>

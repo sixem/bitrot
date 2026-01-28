@@ -429,25 +429,6 @@ const ModeCard = ({
               <option value="block">Block</option>
             </select>
           </label>
-          <label className="mode-control">
-            <span className="mode-control-label">Noise</span>
-            <input
-              className="mode-slider"
-              type="range"
-              min={0}
-              max={100}
-              value={(config as PixelsortConfig).noise}
-              onChange={(event) =>
-                handlePixelsortConfigChange({
-                  noise: Number(event.target.value)
-                })
-              }
-              disabled={disabled}
-            />
-            <span className="mode-control-value">
-              {(config as PixelsortConfig).noise}%
-            </span>
-          </label>
         </div>
       )}
       {value === "datamosh" && (

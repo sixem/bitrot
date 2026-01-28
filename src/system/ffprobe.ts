@@ -7,6 +7,9 @@ export type VideoMetadata = {
   height?: number;
   codec?: string;
   fps?: number;
+  avgFps?: number;
+  nominalFps?: number;
+  isVfr?: boolean;
   sizeBytes?: number;
 };
 
@@ -54,7 +57,15 @@ const parseNumber = (value?: string) => {
 
 const extractMetadata = (payload: FfprobeResult): VideoMetadata => {
   const stream = payload.streams?.[0];
-  const fps = parseRate(stream?.avg_frame_rate) ?? parseRate(stream?.r_frame_rate);
+  const avgFps = parseRate(stream?.avg_frame_rate);
+  const nominalFps = parseRate(stream?.r_frame_rate);
+  const fps = avgFps ?? nominalFps;
+  const isVfr =
+    typeof avgFps === "number" &&
+    typeof nominalFps === "number" &&
+    Number.isFinite(avgFps) &&
+    Number.isFinite(nominalFps) &&
+    Math.abs(avgFps - nominalFps) > Math.max(0.01, avgFps * 0.005);
 
   return {
     durationSeconds: parseNumber(payload.format?.duration),
@@ -62,6 +73,9 @@ const extractMetadata = (payload: FfprobeResult): VideoMetadata => {
     height: stream?.height,
     codec: stream?.codec_name,
     fps,
+    avgFps,
+    nominalFps,
+    isVfr,
     sizeBytes: parseNumber(payload.format?.size)
   };
 };

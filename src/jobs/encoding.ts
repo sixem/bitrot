@@ -3,6 +3,7 @@ export type EncodingId =
   | "h264_fast"
   | "h264_balanced"
   | "h264_quality"
+  | "h264_small"
   | "h264_nvenc";
 
 export type EncoderKind = "libx264" | "h264_nvenc";
@@ -16,7 +17,11 @@ export type EncodingPreset = {
   preset: string;
   crf?: number;
   cq?: number;
+  bitrateCapMultiplier?: number;
 };
+
+const DEFAULT_BITRATE_CAP_MULTIPLIER = 1.5;
+const MIN_BITRATE_CAP_KBPS = 1200;
 
 const BASE_ENCODING_PRESETS: EncodingPreset[] = [
   {
@@ -26,7 +31,8 @@ const BASE_ENCODING_PRESETS: EncodingPreset[] = [
     notes: "Web compatible. Best for quick iteration and sharing.",
     encoder: "libx264",
     preset: "ultrafast",
-    crf: 24
+    crf: 24,
+    bitrateCapMultiplier: 1.5
   },
   {
     id: "h264_balanced",
@@ -35,7 +41,8 @@ const BASE_ENCODING_PRESETS: EncodingPreset[] = [
     notes: "Web compatible. A solid default for most clips.",
     encoder: "libx264",
     preset: "veryfast",
-    crf: 20
+    crf: 20,
+    bitrateCapMultiplier: 1.4
   },
   {
     id: "h264_quality",
@@ -44,7 +51,18 @@ const BASE_ENCODING_PRESETS: EncodingPreset[] = [
     notes: "Web compatible. Use when you care about final output.",
     encoder: "libx264",
     preset: "medium",
-    crf: 18
+    crf: 18,
+    bitrateCapMultiplier: 1.3
+  },
+  {
+    id: "h264_small",
+    label: "Small MP4 (H.264)",
+    description: "Smallest files with slower encoding and softer detail.",
+    notes: "Web compatible. Best for long clips or size limits.",
+    encoder: "libx264",
+    preset: "slow",
+    crf: 28,
+    bitrateCapMultiplier: 1.0
   }
 ];
 
@@ -55,7 +73,8 @@ const NVENC_PRESET: EncodingPreset = {
   notes: "Requires NVIDIA GPU + NVENC-enabled FFmpeg. Web compatible.",
   encoder: "h264_nvenc",
   preset: "p4",
-  cq: 19
+  cq: 19,
+  bitrateCapMultiplier: 1.4
 };
 
 export const DEFAULT_ENCODING_ID: EncodingId = "h264_fast";
@@ -108,10 +127,44 @@ export const getEncodingPreset = (id?: EncodingId) => {
   return selected;
 };
 
-export const buildVideoEncodingArgs = (preset: EncodingPreset) => {
+// Adds a VBV ceiling so highly detailed frames do not explode output sizes.
+const buildBitrateCapArgs = (bitrateCapKbps?: number) => {
+  if (!Number.isFinite(bitrateCapKbps) || bitrateCapKbps === undefined) {
+    return [];
+  }
+  const maxrate = Math.max(MIN_BITRATE_CAP_KBPS, Math.round(bitrateCapKbps));
+  const bufsize = Math.max(maxrate * 2, MIN_BITRATE_CAP_KBPS * 2);
+  return ["-maxrate", `${maxrate}k`, "-bufsize", `${bufsize}k`];
+};
+
+// Estimate a sane cap based on the input bitrate with a preset-specific multiplier.
+export const estimateBitrateCapKbps = (
+  sizeBytes?: number,
+  durationSeconds?: number,
+  preset?: EncodingPreset
+) => {
+  if (!Number.isFinite(sizeBytes) || !Number.isFinite(durationSeconds)) {
+    return undefined;
+  }
+  if (!sizeBytes || !durationSeconds || durationSeconds <= 0) {
+    return undefined;
+  }
+  const inputKbps = (sizeBytes * 8) / (durationSeconds * 1000);
+  if (!Number.isFinite(inputKbps) || inputKbps <= 0) {
+    return undefined;
+  }
+  const multiplier = preset?.bitrateCapMultiplier ?? DEFAULT_BITRATE_CAP_MULTIPLIER;
+  return Math.max(MIN_BITRATE_CAP_KBPS, Math.round(inputKbps * multiplier));
+};
+
+export const buildVideoEncodingArgs = (
+  preset: EncodingPreset,
+  bitrateCapKbps?: number
+) => {
+  const bitrateArgs = buildBitrateCapArgs(bitrateCapKbps);
   if (preset.encoder === "h264_nvenc") {
     const cq = preset.cq ?? 19;
-    return [
+    const args = [
       "-c:v",
       "h264_nvenc",
       "-preset",
@@ -123,10 +176,19 @@ export const buildVideoEncodingArgs = (preset: EncodingPreset) => {
       "-b:v",
       "0"
     ];
+    return [...args, ...bitrateArgs];
   }
 
   const crf = preset.crf ?? 20;
-  return ["-c:v", "libx264", "-preset", preset.preset, "-crf", `${crf}`];
+  return [
+    "-c:v",
+    "libx264",
+    "-preset",
+    preset.preset,
+    "-crf",
+    `${crf}`,
+    ...bitrateArgs
+  ];
 };
 
 export const isNvencAvailable = () => nvencSupport === true;

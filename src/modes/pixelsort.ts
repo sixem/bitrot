@@ -7,7 +7,6 @@ export type PixelsortConfig = {
   maxThreshold: number;
   blockSize: number;
   direction: PixelsortDirection;
-  noise: number;
 };
 
 export const defaultPixelsortConfig: PixelsortConfig = {
@@ -15,6 +14,5 @@ export const defaultPixelsortConfig: PixelsortConfig = {
   threshold: 50,
   maxThreshold: 110,
   blockSize: 4,
-  direction: "vertical",
-  noise: 5
+  direction: "vertical"
 };

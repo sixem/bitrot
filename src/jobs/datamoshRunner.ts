@@ -2,11 +2,12 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { VideoAsset } from "@/domain/video";
 import { createFfmpegProgressParser } from "@/jobs/ffmpegProgress";
-import { joinOutputPath, splitOutputPath } from "@/jobs/output";
+import { joinOutputPath, pathsMatch, splitOutputPath } from "@/jobs/output";
 import type { JobProgress } from "@/jobs/types";
 import {
   DEFAULT_ENCODING_ID,
   buildVideoEncodingArgs,
+  estimateBitrateCapKbps,
   getEncodingPreset,
   type EncodingId,
   type EncodingPreset
@@ -314,7 +315,8 @@ const buildCompatibilityTranscodeArgs = (
   outputPath: string,
   fps: number,
   requestedGop: number,
-  encoding: EncodingPreset
+  encoding: EncodingPreset,
+  bitrateCapKbps?: number
 ) => {
   const gop = clampH264Gop(fps, requestedGop);
   const x264Params = `keyint=${gop}:min-keyint=${gop}:scenecut=0:open-gop=0`;
@@ -338,7 +340,7 @@ const buildCompatibilityTranscodeArgs = (
     "1:a?",
     "-vf",
     SAFE_SCALE_FILTER,
-    ...buildVideoEncodingArgs(encoding),
+    ...buildVideoEncodingArgs(encoding, bitrateCapKbps),
     "-pix_fmt",
     "yuv420p",
     "-r",
@@ -410,6 +412,11 @@ export const runDatamoshJob = async (
 ): Promise<DatamoshRunHandle> => {
   const inputPath = sanitizePath(asset.path);
   const cleanOutput = sanitizePath(outputPath);
+  if (pathsMatch(inputPath, cleanOutput)) {
+    throw new Error(
+      "Output path matches the input file. Choose a different output name."
+    );
+  }
   ensureDatamoshContainer(cleanOutput);
   const tempPath = buildTempMp4Path(cleanOutput);
   const rawPath = buildRawPath(cleanOutput, "raw", "m4v");
@@ -425,6 +432,7 @@ export const runDatamoshJob = async (
   const resolvedEncodingId = encodingId ?? DEFAULT_ENCODING_ID;
   const encodingPreset = getEncodingPreset(resolvedEncodingId);
   const trimRange = normalizeTrimRange(trimStartSeconds, trimEndSeconds);
+  let bitrateCapKbps: number | undefined;
 
   debug("runDatamoshJob start");
   debug("paths: input=%s output=%s temp=%s", inputPath, cleanOutput, tempPath);
@@ -445,6 +453,17 @@ export const runDatamoshJob = async (
   let durationForProgress = durationSeconds;
 
   try {
+    try {
+      const inputProbe = await probeVideo(inputPath);
+      bitrateCapKbps = estimateBitrateCapKbps(
+        inputProbe.sizeBytes,
+        inputProbe.durationSeconds,
+        encodingPreset
+      );
+    } catch (error) {
+      debug("bitrate cap probe failed: %O", error);
+    }
+
     const cuts = await detectSceneCuts(inputPath, threshold, trimRange);
     debug("scene cuts: %o", cuts.slice(0, 12));
     const normalizeArgs = buildNormalizeArgs(inputPath, tempPath, gopSize, cuts, trimRange);
@@ -554,7 +573,8 @@ export const runDatamoshJob = async (
     cleanOutput,
     fps,
     gopSize,
-    encodingPreset
+    encodingPreset,
+    bitrateCapKbps
   );
   debug("compat transcode args: %o", args);
   const feedProgress = createFfmpegProgressParser(durationForProgress, (progress) => {

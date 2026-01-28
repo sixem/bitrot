@@ -5,6 +5,15 @@ const stripQuotes = (value: string) => value.trim().replace(/^"+|"+$/g, "");
 
 const getSeparator = (path: string) => (path.includes("\\") ? "\\" : "/");
 
+// Normalizes paths for comparisons without hitting the filesystem.
+const normalizePathForCompare = (value: string) =>
+  stripQuotes(value).replace(/[/\\]+/g, "/").replace(/\/+$/, "");
+
+const isLikelyWindows = () =>
+  typeof navigator !== "undefined" &&
+  typeof navigator.userAgent === "string" &&
+  navigator.userAgent.toLowerCase().includes("windows");
+
 export type OutputPathParts = {
   folder: string;
   fileName: string;
@@ -68,6 +77,19 @@ export const joinOutputPath = (
   }
 
   return `${cleanFolder}${separator}${cleanFile}`;
+};
+
+// Compares two paths, with a case-insensitive match on Windows.
+export const pathsMatch = (left: string, right: string) => {
+  const normalizedLeft = normalizePathForCompare(left);
+  const normalizedRight = normalizePathForCompare(right);
+  if (!normalizedLeft || !normalizedRight) {
+    return false;
+  }
+  if (isLikelyWindows()) {
+    return normalizedLeft.toLowerCase() === normalizedRight.toLowerCase();
+  }
+  return normalizedLeft === normalizedRight;
 };
 
 // Builds a temporary output path next to the final output file.

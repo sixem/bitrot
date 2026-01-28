@@ -5,6 +5,7 @@ import formatBytes from "@/utils/formatBytes";
 import formatDuration from "@/utils/formatDuration";
 import useVideoMetadata from "@/editor/useVideoMetadata";
 import useFramePreview from "@/editor/useFramePreview";
+import useFrameMap from "@/editor/useFrameMap";
 import VideoPreview from "@/editor/VideoPreview";
 import ModeCard from "@/editor/ModeCard";
 import useFfmpegJob from "@/jobs/useFfmpegJob";
@@ -88,6 +89,8 @@ const Editor = ({ asset, onReplace }: EditorProps) => {
     Number.isFinite(metadataState.metadata.fps)
       ? metadataState.metadata.fps
       : undefined;
+  const metadataIsVfr = metadataState.metadata?.isVfr ?? false;
+  const frameMapState = useFrameMap(asset, metadataIsVfr);
   const trimEnabled = trimSelection.selection.enabled && trimSelection.selection.isValid;
   const trimStartSeconds =
     trimEnabled && typeof trimSelection.selection.start === "number"
@@ -279,14 +282,19 @@ const Editor = ({ asset, onReplace }: EditorProps) => {
             </div>
           </header>
           <article className="editor-card editor-preview-card">
-          <VideoPreview
-            asset={asset}
-            fallbackDuration={metadataState.metadata?.durationSeconds}
-            fps={metadataFps}
-            preview={previewControl}
-            renderTimeSeconds={renderTimeSeconds}
-            trim={trimSelection}
-          />
+            <VideoPreview
+              asset={asset}
+              fallbackDuration={metadataState.metadata?.durationSeconds}
+              fps={metadataFps}
+              isVfr={metadataIsVfr}
+              isCopyMode={modeId === "copy"}
+              frameMap={frameMapState.frameMap}
+              frameMapStatus={frameMapState.status}
+              frameMapError={frameMapState.error}
+              preview={previewControl}
+              renderTimeSeconds={renderTimeSeconds}
+              trim={trimSelection}
+            />
           </article>
         </div>
 
@@ -502,6 +510,7 @@ const Editor = ({ asset, onReplace }: EditorProps) => {
       <ExportModal
         isOpen={isExportOpen}
         settings={exportSettings}
+        inputPath={asset.path}
         onChange={setExportSettings}
         onClose={handleExportClose}
         onConfirm={handleExportConfirm}

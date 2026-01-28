@@ -1,5 +1,6 @@
-﻿import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+﻿import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent } from "react";
 import type { VideoAsset } from "@/domain/video";
+import type { FrameEntry, FrameMap } from "@/analysis/frameMap";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import formatDuration from "@/utils/formatDuration";
 import type { FramePreviewControl } from "@/editor/useFramePreview";
@@ -9,6 +10,11 @@ type VideoPreviewProps = {
   asset: VideoAsset;
   fallbackDuration?: number;
   fps?: number;
+  isVfr?: boolean;
+  isCopyMode?: boolean;
+  frameMap?: FrameMap;
+  frameMapStatus?: "idle" | "loading" | "ready" | "error";
+  frameMapError?: string;
   preview?: FramePreviewControl;
   renderTimeSeconds?: number;
   trim?: TrimControl;
@@ -47,11 +53,101 @@ const clampTime = (time: number, duration?: number) => {
   return Math.min(Math.max(time, 0), Math.max(0, duration ?? 0));
 };
 
+const MIN_SCRUB_STEP_SECONDS = 0.001;
+const TRIM_TRACK_BASE_COLOR = "#131313";
+
+const findNearestFrameIndex = (frames: FrameEntry[], timeSeconds: number) => {
+  let low = 0;
+  let high = frames.length - 1;
+
+  while (low <= high) {
+    const mid = (low + high) >> 1;
+    const midTime = frames[mid].timeSeconds;
+    if (midTime < timeSeconds) {
+      low = mid + 1;
+    } else {
+      high = mid - 1;
+    }
+  }
+
+  if (low <= 0) {
+    return 0;
+  }
+  if (low >= frames.length) {
+    return frames.length - 1;
+  }
+
+  const before = frames[low - 1].timeSeconds;
+  const after = frames[low].timeSeconds;
+  return timeSeconds - before <= after - timeSeconds ? low - 1 : low;
+};
+
+// Pick the smallest positive frame delta to keep scrubbing granular for VFR clips.
+const getMinFrameStep = (frames: FrameEntry[] | null) => {
+  if (!frames || frames.length < 2) {
+    return undefined;
+  }
+
+  let minDelta = Number.POSITIVE_INFINITY;
+  for (let index = 1; index < frames.length; index += 1) {
+    const delta = frames[index].timeSeconds - frames[index - 1].timeSeconds;
+    if (delta > 0 && delta < minDelta) {
+      minDelta = delta;
+    }
+  }
+
+  if (!Number.isFinite(minDelta) || minDelta <= 0) {
+    return undefined;
+  }
+
+  return Math.max(MIN_SCRUB_STEP_SECONDS, minDelta);
+};
+
+// Build a scrubber gradient with a highlighted selection band.
+const buildTrimGradient = (startPct: number, endPct: number, highlight: string) => {
+  const base = TRIM_TRACK_BASE_COLOR;
+  const stops = [
+    `${base} 0%`,
+    `${base} ${startPct}%`,
+    `${highlight} ${startPct}%`,
+    `${highlight} ${endPct}%`,
+    `${base} ${endPct}%`,
+    `${base} 100%`
+  ];
+
+  return `linear-gradient(90deg, ${stops.join(", ")})`;
+};
+
+const getVfrWarningMessage = (
+  isVfr: boolean,
+  hasFrameMap: boolean,
+  status: "idle" | "loading" | "ready" | "error",
+  errorLabel?: string
+) => {
+  if (!isVfr || hasFrameMap) {
+    return null;
+  }
+  if (status === "loading" || status === "idle") {
+    return "Variable FPS detected. Loading a frame map for accurate controls...";
+  }
+  if (status === "error") {
+    return errorLabel
+      ? `Variable FPS detected. Frame map failed: ${errorLabel}`
+      : "Variable FPS detected. Frame map failed to load.";
+  }
+  return "Variable FPS detected. Frame-accurate controls are disabled.";
+};
+
 // Video preview player with custom scrub + skip controls.
 const VideoPreview = ({
   asset,
   fallbackDuration,
   fps,
+  isVfr = false,
+  isCopyMode = false,
+  frameMap,
+  frameMapStatus = "idle",
+  frameMapError,
   preview,
   renderTimeSeconds,
   trim
@@ -63,6 +159,7 @@ const VideoPreview = ({
   const [isPlaying, setIsPlaying] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [volume, setVolume] = useState(0.2);
+  const [skipSeconds, setSkipSeconds] = useState(5);
 
   const sourcePath = sanitizePath(asset.path);
   const sourceUrl = useMemo(
@@ -75,9 +172,19 @@ const VideoPreview = ({
     : Number.isFinite(fallbackDuration)
       ? fallbackDuration
       : undefined;
-  const resolvedFps =
+  const nominalFps =
     typeof fps === "number" && Number.isFinite(fps) && fps > 0 ? fps : undefined;
+  const resolvedFps = !isVfr ? nominalFps : undefined;
   const frameDurationSeconds = resolvedFps ? 1 / resolvedFps : undefined;
+  const frameMapFrames = frameMap?.frames ?? null;
+  const hasFrameMap = !!frameMapFrames && frameMapFrames.length > 0;
+  const frameMapErrorLabel = frameMapError?.split("\n")[0]?.trim();
+  const frameMapStep = useMemo(() => getMinFrameStep(frameMapFrames), [frameMapFrames]);
+  const vfrWarningMessage = useMemo(
+    () => getVfrWarningMessage(isVfr, hasFrameMap, frameMapStatus, frameMapErrorLabel),
+    [frameMapErrorLabel, frameMapStatus, hasFrameMap, isVfr]
+  );
+  const showVfrWarning = Boolean(vfrWarningMessage);
 
   // Reset playback state when the source changes.
   useEffect(() => {
@@ -123,6 +230,18 @@ const VideoPreview = ({
   const stepBy = (delta: number) => {
     seekTo(currentTime + delta);
   };
+
+  const cycleSkipSeconds = useCallback(() => {
+    setSkipSeconds((value) => (value >= 5 ? 1 : value + 1));
+  }, []);
+
+  const handleSkipContextMenu = useCallback(
+    (event: MouseEvent<HTMLButtonElement>) => {
+      event.preventDefault();
+      cycleSkipSeconds();
+    },
+    [cycleSkipSeconds]
+  );
 
   const handleTogglePlayback = async () => {
     const video = videoRef.current;
@@ -188,15 +307,53 @@ const VideoPreview = ({
   const scrubValue = Number.isFinite(resolvedDuration)
     ? clampTime(currentTime, resolvedDuration)
     : 0;
-  const totalFrames =
-    resolvedFps && Number.isFinite(resolvedDuration)
+  const totalFrames = hasFrameMap
+    ? frameMapFrames?.length
+    : resolvedFps && Number.isFinite(resolvedDuration)
       ? Math.max(1, Math.round(resolvedDuration * resolvedFps))
       : undefined;
   const maxFrameIndex = totalFrames ? Math.max(0, totalFrames - 1) : undefined;
-  const currentFrame =
-    resolvedFps && Number.isFinite(scrubValue)
-      ? Math.max(0, Math.round(scrubValue * resolvedFps))
-      : undefined;
+  const clampFrameIndex = useCallback(
+    (frame: number) => {
+      if (maxFrameIndex === undefined) {
+        return Math.max(0, frame);
+      }
+      return Math.min(Math.max(0, frame), maxFrameIndex);
+    },
+    [maxFrameIndex]
+  );
+  const resolveFrameIndex = useCallback(
+    (timeSeconds: number) => {
+      if (!Number.isFinite(timeSeconds)) {
+        return undefined;
+      }
+      if (frameMapFrames && frameMapFrames.length > 0) {
+        return findNearestFrameIndex(frameMapFrames, timeSeconds);
+      }
+      if (!resolvedFps) {
+        return undefined;
+      }
+      return Math.max(0, Math.round(timeSeconds * resolvedFps));
+    },
+    [frameMapFrames, resolvedFps]
+  );
+  const resolveTimeForFrame = useCallback(
+    (frame: number) => {
+      if (!Number.isFinite(frame)) {
+        return undefined;
+      }
+      if (frameMapFrames && frameMapFrames.length > 0) {
+        const clamped = clampFrameIndex(frame);
+        return frameMapFrames[clamped]?.timeSeconds;
+      }
+      if (!frameDurationSeconds) {
+        return undefined;
+      }
+      return Math.max(0, frame) * frameDurationSeconds;
+    },
+    [clampFrameIndex, frameDurationSeconds, frameMapFrames]
+  );
+  const currentFrame = resolveFrameIndex(scrubValue);
   const clampedFrame =
     currentFrame !== undefined && maxFrameIndex !== undefined
       ? Math.min(currentFrame, maxFrameIndex)
@@ -216,26 +373,38 @@ const VideoPreview = ({
     typeof trimSelection.start === "number" &&
     typeof trimSelection.end === "number";
   const trimEnabled = !!trimSelection?.enabled && trimHasRange;
+  const showCopyTrimWarning = isCopyMode && trimEnabled;
   const trimLengthSeconds = trimSelection?.lengthSeconds;
-  // Show frame-accurate time readouts when FPS is known.
-  const formatTimeWithFrame = (timeSeconds?: number) => {
+  const trimLengthFrames = useMemo(() => {
+    if (!trimHasRange) {
+      return undefined;
+    }
+    if (
+      typeof trimSelection?.start !== "number" ||
+      typeof trimSelection?.end !== "number"
+    ) {
+      return undefined;
+    }
+    if (trimSelection.end <= trimSelection.start) {
+      return 0;
+    }
+    const startFrame = resolveFrameIndex(trimSelection.start);
+    const endFrame = resolveFrameIndex(trimSelection.end);
+    if (startFrame === undefined || endFrame === undefined) {
+      return undefined;
+    }
+    return Math.max(0, endFrame - startFrame);
+  }, [resolveFrameIndex, trimHasRange, trimSelection?.end, trimSelection?.start]);
+  // Show frame-accurate time readouts when FPS or a frame map is known.
+  const formatTimeWithFrame = (timeSeconds?: number, frameOverride?: number) => {
     if (!Number.isFinite(timeSeconds) || timeSeconds === undefined) {
       return "--";
     }
-    if (!resolvedFps || !frameDurationSeconds) {
-      return formatDuration(timeSeconds);
+    const base = formatDuration(timeSeconds);
+    const frame = frameOverride ?? resolveFrameIndex(timeSeconds);
+    if (frame === undefined) {
+      return base;
     }
-    const frame = Math.max(0, Math.round(timeSeconds * resolvedFps));
-    const totalSeconds = Math.max(0, Math.floor(frame * frameDurationSeconds + 1e-9));
-    const hrs = Math.floor(totalSeconds / 3600);
-    const mins = Math.floor((totalSeconds % 3600) / 60);
-    const secs = totalSeconds % 60;
-    const base =
-      hrs > 0
-        ? `${hrs}:${mins.toString().padStart(2, "0")}:${secs
-            .toString()
-            .padStart(2, "0")}`
-        : `${mins}:${secs.toString().padStart(2, "0")}`;
     return `${base} + f${frame}`;
   };
   const trimTrack = useMemo(() => {
@@ -256,7 +425,7 @@ const VideoPreview = ({
     if (start !== undefined && end !== undefined && end > start) {
       const startPct = (start / resolvedDuration) * 100;
       const endPct = (end / resolvedDuration) * 100;
-      return `linear-gradient(90deg, #131313 0%, #131313 ${startPct}%, ${highlight} ${startPct}%, ${highlight} ${endPct}%, #131313 ${endPct}%, #131313 100%)`;
+      return buildTrimGradient(startPct, endPct, highlight);
     }
     const marker = start ?? end;
     if (marker === undefined) {
@@ -266,7 +435,7 @@ const VideoPreview = ({
     const markerWidth = 0.45;
     const minPct = Math.max(0, markerPct - markerWidth);
     const maxPct = Math.min(100, markerPct + markerWidth);
-    return `linear-gradient(90deg, #131313 0%, #131313 ${minPct}%, ${highlight} ${minPct}%, ${highlight} ${maxPct}%, #131313 ${maxPct}%, #131313 100%)`;
+    return buildTrimGradient(minPct, maxPct, highlight);
   }, [resolvedDuration, trimEnabled, trimSelection?.end, trimSelection?.start]);
 
   const handlePreviewToggle = () => {
@@ -280,64 +449,39 @@ const VideoPreview = ({
     preview.onRequest(currentTime);
   };
 
-  // Translate frame indices to timeline time using the reported FPS.
-  const snapToFrame = (timeSeconds: number) => {
-    if (!resolvedFps || !frameDurationSeconds) {
-      return timeSeconds;
-    }
-    const frame = Math.max(0, Math.round(timeSeconds * resolvedFps));
-    return frame * frameDurationSeconds;
-  };
-
-  const clampFrameIndex = useCallback(
-    (frame: number) => {
-      if (maxFrameIndex === undefined) {
-        return Math.max(0, frame);
-      }
-      return Math.min(Math.max(0, frame), maxFrameIndex);
-    },
-    [maxFrameIndex]
-  );
-
-  const timeToFrame = useCallback(
+  // Snap to the closest frame boundary using per-frame timestamps when available.
+  const snapToFrame = useCallback(
     (timeSeconds: number) => {
-      if (!resolvedFps) {
-        return undefined;
+      const frame = resolveFrameIndex(timeSeconds);
+      if (frame === undefined) {
+        return timeSeconds;
       }
-      return Math.max(0, Math.round(timeSeconds * resolvedFps));
+      const snapped = resolveTimeForFrame(frame);
+      return snapped ?? timeSeconds;
     },
-    [resolvedFps]
-  );
-
-  const frameToTime = useCallback(
-    (frame: number) => {
-      if (!frameDurationSeconds) {
-        return 0;
-      }
-      return frame * frameDurationSeconds;
-    },
-    [frameDurationSeconds]
+    [resolveFrameIndex, resolveTimeForFrame]
   );
 
   const seekByFrames = useCallback(
     (deltaFrames: number) => {
-      if (!resolvedFps || !frameDurationSeconds) {
-        return;
-      }
       const video = videoRef.current;
       if (!video) {
         return;
       }
-      const baseFrame = timeToFrame(video.currentTime) ?? 0;
+      const baseFrame = resolveFrameIndex(video.currentTime) ?? 0;
       const nextFrame = clampFrameIndex(baseFrame + deltaFrames);
-      seekTo(frameToTime(nextFrame));
+      const nextTime = resolveTimeForFrame(nextFrame);
+      if (nextTime === undefined) {
+        return;
+      }
+      seekTo(nextTime);
     },
-    [clampFrameIndex, frameDurationSeconds, frameToTime, resolvedFps, seekTo, timeToFrame]
+    [clampFrameIndex, resolveFrameIndex, resolveTimeForFrame, seekTo]
   );
 
   const nudgeTrimBoundary = useCallback(
     (boundary: "start" | "end", deltaFrames: number) => {
-      if (!trim || !resolvedFps || !frameDurationSeconds) {
+      if (!trim) {
         return;
       }
       const boundaryTime =
@@ -352,28 +496,25 @@ const VideoPreview = ({
       if (typeof baseTime !== "number") {
         return;
       }
-      const baseFrame = timeToFrame(baseTime) ?? 0;
+      const baseFrame = resolveFrameIndex(baseTime) ?? 0;
       const nextFrame = clampFrameIndex(baseFrame + deltaFrames);
-      const nextTime = frameToTime(nextFrame);
+      const nextTime = resolveTimeForFrame(nextFrame);
+      if (nextTime === undefined) {
+        return;
+      }
       if (boundary === "start") {
         trim.markIn(nextTime);
       } else {
         trim.markOut(nextTime);
       }
     },
-    [
-      clampFrameIndex,
-      frameDurationSeconds,
-      frameToTime,
-      resolvedFps,
-      timeToFrame,
-      trim
-    ]
+    [clampFrameIndex, resolveFrameIndex, resolveTimeForFrame, trim]
   );
 
   // Frame-accurate keyboard nudges for the playhead and trim markers.
   useEffect(() => {
-    if (!resolvedFps || !frameDurationSeconds) {
+    const canNudgeFrames = hasFrameMap || !!frameDurationSeconds;
+    if (!canNudgeFrames) {
       return;
     }
 
@@ -412,10 +553,10 @@ const VideoPreview = ({
       window.removeEventListener("keydown", handleKeyDown);
     };
   }, [
-    controlsDisabled,
     frameDurationSeconds,
+    hasFrameMap,
+    controlsDisabled,
     nudgeTrimBoundary,
-    resolvedFps,
     seekByFrames,
     sourceUrl,
     trim
@@ -510,7 +651,7 @@ const VideoPreview = ({
         <div className="preview-toolbar-top">
           <div className="preview-controls">
             <button
-              className="preview-button"
+              className="preview-button preview-button--toggle"
               type="button"
               onClick={handleTogglePlayback}
               disabled={!sourceUrl || controlsDisabled}
@@ -520,18 +661,20 @@ const VideoPreview = ({
             <button
               className="preview-button"
               type="button"
-              onClick={() => stepBy(-5)}
+              onClick={() => stepBy(-skipSeconds)}
+              onContextMenu={handleSkipContextMenu}
               disabled={!resolvedDuration || controlsDisabled}
             >
-              -5s
+              -{skipSeconds}s
             </button>
             <button
               className="preview-button"
               type="button"
-              onClick={() => stepBy(5)}
+              onClick={() => stepBy(skipSeconds)}
+              onContextMenu={handleSkipContextMenu}
               disabled={!resolvedDuration || controlsDisabled}
             >
-              +5s
+              +{skipSeconds}s
             </button>
           </div>
           {trim && (
@@ -592,6 +735,14 @@ const VideoPreview = ({
             )}
           </div>
         </div>
+        {showVfrWarning && (
+          <div className="preview-warning">{vfrWarningMessage}</div>
+        )}
+        {showCopyTrimWarning && (
+          <div className="preview-warning">
+            Copy mode trim requires re-encoding for frame-accurate cuts.
+          </div>
+        )}
         {trim && (
           <div className="preview-range" data-active={trimEnabled}>
             <div className="preview-range-info">
@@ -599,7 +750,7 @@ const VideoPreview = ({
                 <>
                   <span>In {formatTimeWithFrame(trimSelection?.start)}</span>
                   <span>Out {formatTimeWithFrame(trimSelection?.end)}</span>
-                  <span>Len {formatTimeWithFrame(trimLengthSeconds)}</span>
+                  <span>Len {formatTimeWithFrame(trimLengthSeconds, trimLengthFrames)}</span>
                 </>
               ) : trimSelection?.start !== undefined ? (
                 <>
@@ -639,7 +790,7 @@ const VideoPreview = ({
         type="range"
         min={0}
         max={resolvedDuration ?? 0}
-        step={frameDurationSeconds ?? 0.01}
+        step={frameMapStep ?? frameDurationSeconds ?? 0.01}
         value={scrubValue}
         onChange={(event) => seekTo(Number(event.target.value))}
         disabled={!resolvedDuration || controlsDisabled}
@@ -655,6 +806,7 @@ const VideoPreview = ({
 };
 
 export default VideoPreview;
+
 
 
 

@@ -1,6 +1,6 @@
 import type { VideoAsset } from "@/domain/video";
 import { createFfmpegProgressParser } from "@/jobs/ffmpegProgress";
-import { buildDefaultOutputPath } from "@/jobs/output";
+import { buildDefaultOutputPath, pathsMatch } from "@/jobs/output";
 import { runDatamoshJob } from "@/jobs/datamoshRunner";
 import { runPixelsortJob } from "@/jobs/pixelsortRunner";
 import {
@@ -25,9 +25,11 @@ import type { JobProgress } from "@/jobs/types";
 import {
   DEFAULT_ENCODING_ID,
   buildVideoEncodingArgs,
+  estimateBitrateCapKbps,
   getEncodingPreset,
   type EncodingId
 } from "@/jobs/encoding";
+import { probeVideo } from "@/system/ffprobe";
 import makeDebug from "@/utils/debug";
 
 type FfmpegRunOptions = {
@@ -94,8 +96,7 @@ const normalizeTrimRange = (start?: number, end?: number) => {
   return { start: safeStart, end: safeEnd };
 };
 
-const buildTrimArgs = (start?: number, end?: number) => {
-  const range = normalizeTrimRange(start, end);
+const buildTrimArgs = (range?: { start: number; end: number }) => {
   if (!range) {
     return [];
   }
@@ -109,18 +110,21 @@ const buildArgs = (
   modeConfig?: ModeConfigMap[ModeId],
   encodingId?: EncodingId,
   trimStartSeconds?: number,
-  trimEndSeconds?: number
+  trimEndSeconds?: number,
+  bitrateCapKbps?: number
 ) => {
   const mode = getModeDefinition(modeId);
   const resolvedConfig = modeConfig ?? mode.defaultConfig;
   const encoding = getEncodingPreset(encodingId ?? DEFAULT_ENCODING_ID);
+  const trimRange = normalizeTrimRange(trimStartSeconds, trimEndSeconds);
+  const shouldCopy = mode.encode === "copy" && !trimRange;
   // Always pick the first video + (optional) first audio stream explicitly.
   const args = [
     "-y",
     "-hide_banner",
     "-i",
     inputPath,
-    ...buildTrimArgs(trimStartSeconds, trimEndSeconds),
+    ...buildTrimArgs(trimRange),
     "-map",
     "0:v:0",
     "-map",
@@ -131,18 +135,18 @@ const buildArgs = (
   if (mode.buildFilter) {
     filters.push(mode.buildFilter(resolvedConfig));
   }
-  if (mode.encode !== "copy") {
+  if (!shouldCopy) {
     filters.push(SAFE_SCALE_FILTER);
   }
   if (filters.length > 0) {
     args.push("-vf", filters.join(","));
   }
 
-  if (mode.encode === "copy") {
+  if (shouldCopy) {
     args.push("-c", "copy");
   } else {
     args.push(
-      ...buildVideoEncodingArgs(encoding),
+      ...buildVideoEncodingArgs(encoding, bitrateCapKbps),
       "-pix_fmt",
       "yuv420p",
       ...buildAudioArgs(outputPath),
@@ -152,6 +156,24 @@ const buildArgs = (
 
   args.push("-progress", "pipe:1", "-nostats", outputPath);
   return args;
+};
+
+const resolveBitrateCapKbps = async (
+  inputPath: string,
+  encodingId?: EncodingId
+) => {
+  try {
+    const metadata = await probeVideo(inputPath);
+    const preset = getEncodingPreset(encodingId ?? DEFAULT_ENCODING_ID);
+    return estimateBitrateCapKbps(
+      metadata.sizeBytes,
+      metadata.durationSeconds,
+      preset
+    );
+  } catch (error) {
+    debug("bitrate cap probe failed: %O", error);
+    return undefined;
+  }
 };
 
 // Runs an ffmpeg job for the selected mode with progress output for UI wiring.
@@ -164,6 +186,11 @@ export const runFfmpegJob = async (
   const outputPath = sanitizePath(
     options.outputPath ?? buildDefaultOutputPath(inputPath)
   );
+  if (pathsMatch(inputPath, outputPath)) {
+    throw new Error(
+      "Output path matches the input file. Choose a different output name."
+    );
+  }
   debug(
     "runFfmpegJob start: mode=%s input=%s output=%s",
     options.modeId ?? "analog",
@@ -205,6 +232,10 @@ export const runFfmpegJob = async (
     );
   }
 
+  const bitrateCapKbps = await resolveBitrateCapKbps(
+    inputPath,
+    options.encodingId
+  );
   const args = buildArgs(
     inputPath,
     outputPath,
@@ -212,7 +243,8 @@ export const runFfmpegJob = async (
     options.modeConfig,
     options.encodingId,
     options.trimStartSeconds,
-    options.trimEndSeconds
+    options.trimEndSeconds,
+    bitrateCapKbps
   );
   debug("ffmpeg args: %o", args);
   const feedProgress = createFfmpegProgressParser(
