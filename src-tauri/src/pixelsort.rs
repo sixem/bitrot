@@ -47,16 +47,17 @@ pub struct PixelsortConfig {
   pub threshold: f32,
   pub max_threshold: f32,
   pub block_size: u32,
-  pub direction: String,
-  pub noise: f32
+  pub direction: String
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PixelsortEncoding {
   pub encoder: String,
   pub preset: String,
   pub crf: Option<u32>,
-  pub cq: Option<u32>
+  pub cq: Option<u32>,
+  pub max_bitrate_kbps: Option<u32>
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -156,7 +157,7 @@ fn emit_preview(window: &Window, job_id: &str, frame: u64, path: &Path) {
 }
 
 fn luma(r: u8, g: u8, b: u8) -> u8 {
-  // Match ImageRot's brightness weights for closer visual parity.
+  // Use standard luma weights to preserve perceptual brightness.
   let value = 0.299 * r as f32 + 0.587 * g as f32 + 0.114 * b as f32;
   value.round().clamp(0.0, 255.0) as u8
 }
@@ -174,7 +175,9 @@ struct FrameWorkspace {
   output: Vec<u8>,
   luma: Vec<u8>,
   scratch: Vec<u8>,
-  segment_indices: Vec<usize>
+  segment_indices: Vec<usize>,
+  luma_counts: [usize; 256],
+  luma_offsets: [usize; 256]
 }
 
 impl FrameWorkspace {
@@ -188,7 +191,9 @@ impl FrameWorkspace {
       output: vec![0; byte_len],
       luma: vec![0; pixel_count],
       scratch: vec![0; byte_len],
-      segment_indices: Vec::with_capacity(width.max(height))
+      segment_indices: Vec::with_capacity(width.max(height)),
+      luma_counts: [0; 256],
+      luma_offsets: [0; 256]
     }
   }
 
@@ -217,9 +222,151 @@ impl FrameWorkspace {
     }
   }
 
+
   fn output(&self) -> &[u8] {
     &self.output
   }
+}
+
+fn ensure_segment_capacity(segment_indices: &mut Vec<usize>, needed: usize) {
+  if segment_indices.capacity() < needed {
+    segment_indices.reserve(needed - segment_indices.capacity());
+  }
+}
+
+// Fills segment_indices with indices sorted by luma descending (counting sort).
+fn sort_row_segment_by_luma(
+  luma_map: &[u8],
+  row_start: usize,
+  start: usize,
+  end: usize,
+  segment_indices: &mut Vec<usize>,
+  luma_counts: &mut [usize; 256],
+  luma_offsets: &mut [usize; 256]
+) -> usize {
+  let segment_len = end.saturating_sub(start);
+  if segment_len == 0 {
+    segment_indices.clear();
+    return 0;
+  }
+  ensure_segment_capacity(segment_indices, segment_len);
+  segment_indices.resize(segment_len, 0);
+  luma_counts.fill(0);
+
+  for x in start..end {
+    let idx = row_start + x;
+    let lum = luma_map[idx] as usize;
+    luma_counts[lum] += 1;
+  }
+
+  let mut offset = 0usize;
+  for lum in (0..=255).rev() {
+    luma_offsets[lum] = offset;
+    offset += luma_counts[lum];
+  }
+
+  for x in start..end {
+    let idx = row_start + x;
+    let lum = luma_map[idx] as usize;
+    let dest = luma_offsets[lum];
+    segment_indices[dest] = idx;
+    luma_offsets[lum] += 1;
+  }
+
+  segment_len
+}
+
+// Fills segment_indices with indices sorted by luma descending (counting sort).
+fn sort_col_segment_by_luma(
+  luma_map: &[u8],
+  width: usize,
+  x: usize,
+  start: usize,
+  end: usize,
+  segment_indices: &mut Vec<usize>,
+  luma_counts: &mut [usize; 256],
+  luma_offsets: &mut [usize; 256]
+) -> usize {
+  let segment_len = end.saturating_sub(start);
+  if segment_len == 0 {
+    segment_indices.clear();
+    return 0;
+  }
+  ensure_segment_capacity(segment_indices, segment_len);
+  segment_indices.resize(segment_len, 0);
+  luma_counts.fill(0);
+
+  for y in start..end {
+    let idx = y * width + x;
+    let lum = luma_map[idx] as usize;
+    luma_counts[lum] += 1;
+  }
+
+  let mut offset = 0usize;
+  for lum in (0..=255).rev() {
+    luma_offsets[lum] = offset;
+    offset += luma_counts[lum];
+  }
+
+  for y in start..end {
+    let idx = y * width + x;
+    let lum = luma_map[idx] as usize;
+    let dest = luma_offsets[lum];
+    segment_indices[dest] = idx;
+    luma_offsets[lum] += 1;
+  }
+
+  segment_len
+}
+
+// Fills segment_indices with indices sorted by luma descending (counting sort).
+fn sort_block_by_luma(
+  luma_map: &[u8],
+  width: usize,
+  start_x: usize,
+  start_y: usize,
+  end_x: usize,
+  end_y: usize,
+  segment_indices: &mut Vec<usize>,
+  luma_counts: &mut [usize; 256],
+  luma_offsets: &mut [usize; 256]
+) -> usize {
+  let block_width = end_x.saturating_sub(start_x);
+  let block_height = end_y.saturating_sub(start_y);
+  let segment_len = block_width.saturating_mul(block_height);
+  if segment_len == 0 {
+    segment_indices.clear();
+    return 0;
+  }
+  ensure_segment_capacity(segment_indices, segment_len);
+  segment_indices.resize(segment_len, 0);
+  luma_counts.fill(0);
+
+  for y in start_y..end_y {
+    for x in start_x..end_x {
+      let idx = y * width + x;
+      let lum = luma_map[idx] as usize;
+      luma_counts[lum] += 1;
+    }
+  }
+
+  let mut offset = 0usize;
+  for lum in (0..=255).rev() {
+    luma_offsets[lum] = offset;
+    offset += luma_counts[lum];
+  }
+
+  for y in start_y..end_y {
+    for x in start_x..end_x {
+      let idx = y * width + x;
+      let lum = luma_map[idx] as usize;
+      let dest = luma_offsets[lum];
+      segment_indices[dest] = idx;
+      luma_offsets[lum] += 1;
+    }
+  }
+
+  segment_len
 }
 
 fn clamp_u8(value: i32) -> u8 {
@@ -242,17 +389,24 @@ fn resolve_luma_band(mut min_threshold: i32, mut max_threshold: i32) -> (u8, u8)
 // Sorts contiguous luma-band runs along rows, then blends them back into the output.
 fn pixelsort_horizontal(
   input: &[u8],
-  output: &mut [u8],
-  scratch: &mut [u8],
-  luma_map: &[u8],
+  workspace: &mut FrameWorkspace,
   width: usize,
   height: usize,
   min_threshold: u8,
   max_threshold: u8,
   min_segment: usize,
-  strength: f32,
-  segment_indices: &mut Vec<usize>
+  strength: f32
 ) {
+  let FrameWorkspace {
+    luma,
+    output,
+    scratch,
+    segment_indices,
+    luma_counts,
+    luma_offsets,
+    ..
+  } = workspace;
+  let luma_map = luma.as_slice();
   for y in 0..height {
     let row_start = y * width;
     let row_min = min_threshold;
@@ -275,10 +429,15 @@ fn pixelsort_horizontal(
         }
         let end = x;
         if end - start >= min_segment {
-          segment_indices.clear();
-          segment_indices.extend((row_start + start)..(row_start + end));
-          segment_indices.sort_unstable_by(|a, b| luma_map[*b].cmp(&luma_map[*a]));
-          let segment_len = end - start;
+          let segment_len = sort_row_segment_by_luma(
+            luma_map,
+            row_start,
+            start,
+            end,
+            segment_indices,
+            luma_counts,
+            luma_offsets
+          );
           let byte_len = segment_len * 4;
           let segment_bytes = &mut scratch[..byte_len];
           for (offset, source_pixel) in segment_indices.iter().enumerate() {
@@ -317,17 +476,24 @@ fn pixelsort_horizontal(
 // Vertical pass for the same luma-band sorting behavior.
 fn pixelsort_vertical(
   input: &[u8],
-  output: &mut [u8],
-  scratch: &mut [u8],
-  luma_map: &[u8],
+  workspace: &mut FrameWorkspace,
   width: usize,
   height: usize,
   min_threshold: u8,
   max_threshold: u8,
   min_segment: usize,
-  strength: f32,
-  segment_indices: &mut Vec<usize>
+  strength: f32
 ) {
+  let FrameWorkspace {
+    luma,
+    output,
+    scratch,
+    segment_indices,
+    luma_counts,
+    luma_offsets,
+    ..
+  } = workspace;
+  let luma_map = luma.as_slice();
   for x in 0..width {
     let col_min = min_threshold;
     let col_max = max_threshold;
@@ -349,12 +515,16 @@ fn pixelsort_vertical(
         }
         let end = y;
         if end - start >= min_segment {
-          segment_indices.clear();
-          for sy in start..end {
-            segment_indices.push(sy * width + x);
-          }
-          segment_indices.sort_unstable_by(|a, b| luma_map[*b].cmp(&luma_map[*a]));
-          let segment_len = end - start;
+          let segment_len = sort_col_segment_by_luma(
+            luma_map,
+            width,
+            x,
+            start,
+            end,
+            segment_indices,
+            luma_counts,
+            luma_offsets
+          );
           let byte_len = segment_len * 4;
           let segment_bytes = &mut scratch[..byte_len];
           for (offset, source_pixel) in segment_indices.iter().enumerate() {
@@ -394,16 +564,24 @@ fn pixelsort_vertical(
 // Block mode sorts pixels inside small tiles for a chunkier look.
 fn pixelsort_block(
   input: &[u8],
-  output: &mut [u8],
-  luma_map: &[u8],
+  workspace: &mut FrameWorkspace,
   width: usize,
   height: usize,
   min_threshold: u8,
   max_threshold: u8,
   block_size: usize,
-  strength: f32,
-  segment_indices: &mut Vec<usize>
+  strength: f32
 ) {
+  let FrameWorkspace {
+    luma,
+    output,
+    scratch: _scratch,
+    segment_indices,
+    luma_counts,
+    luma_offsets,
+    ..
+  } = workspace;
+  let luma_map = luma.as_slice();
   let mut by = 0;
   while by < height {
     let mut bx = 0;
@@ -424,13 +602,17 @@ fn pixelsort_block(
       let avg = if count > 0 { (luma_total / count) as u8 } else { 0 };
 
       if in_luma_band(avg, min_threshold, max_threshold) {
-        segment_indices.clear();
-        for y in by..end_y {
-          for x in bx..end_x {
-            segment_indices.push(y * width + x);
-          }
-        }
-        segment_indices.sort_unstable_by(|a, b| luma_map[*b].cmp(&luma_map[*a]));
+        let _segment_len = sort_block_by_luma(
+          luma_map,
+          width,
+          bx,
+          by,
+          end_x,
+          end_y,
+          segment_indices,
+          luma_counts,
+          luma_offsets
+        );
         let mut offset = 0usize;
         for y in by..end_y {
           for x in bx..end_x {
@@ -444,10 +626,16 @@ fn pixelsort_block(
               output[idx + 3] = input[s_idx + 3];
             } else {
               output[idx] = blend_channel(output[idx], input[s_idx], strength);
-              output[idx + 1] =
-                blend_channel(output[idx + 1], input[s_idx + 1], strength);
-              output[idx + 2] =
-                blend_channel(output[idx + 2], input[s_idx + 2], strength);
+              output[idx + 1] = blend_channel(
+                output[idx + 1],
+                input[s_idx + 1],
+                strength
+              );
+              output[idx + 2] = blend_channel(
+                output[idx + 2],
+                input[s_idx + 2],
+                strength
+              );
               output[idx + 3] = input[s_idx + 3];
             }
             offset += 1;
@@ -471,9 +659,8 @@ fn pixelsort_frame<'a>(
   workspace.prepare(input);
   // Intensity is now the blend strength between original and sorted pixels.
   let strength = (config.intensity / 100.0).clamp(0.0, 1.0);
-  let noise_strength = (config.noise / 100.0).clamp(0.0, 1.0);
   let block_size = (config.block_size.max(2)) as usize;
-  // ImageRot sorts any run longer than 1 pixel. Keep that behavior for parity.
+  // Sort any run longer than 1 pixel for a more aggressive smear.
   let min_segment = 2;
   let min_threshold = config.threshold.round() as i32;
   let max_threshold = config.max_threshold.round() as i32;
@@ -488,46 +675,38 @@ fn pixelsort_frame<'a>(
     match parse_direction(config.direction.as_str()) {
       SortDirection::Horizontal => pixelsort_horizontal(
         input,
-        &mut workspace.output,
-        &mut workspace.scratch,
-        &workspace.luma,
+        workspace,
         width,
         height,
         min_threshold,
         max_threshold,
         min_segment,
-        strength,
-        &mut workspace.segment_indices
+        strength
       ),
       SortDirection::Vertical => pixelsort_vertical(
         input,
-        &mut workspace.output,
-        &mut workspace.scratch,
-        &workspace.luma,
+        workspace,
         width,
         height,
         min_threshold,
         max_threshold,
         min_segment,
-        strength,
-        &mut workspace.segment_indices
+        strength
       ),
       SortDirection::Block => pixelsort_block(
         input,
-        &mut workspace.output,
-        &workspace.luma,
+        workspace,
         width,
         height,
         min_threshold,
         max_threshold,
         block_size,
-        strength,
-        &mut workspace.segment_indices
+        strength
       )
     }
   }
 
-  apply_pixelsort_fx(workspace, noise_strength, frame_index);
+  apply_pixelsort_fx(workspace, frame_index);
 
   workspace.output()
 }
@@ -535,10 +714,9 @@ fn pixelsort_frame<'a>(
 // Applies a lightweight post-processing stack for the classic pixel-sort look.
 fn apply_pixelsort_fx(
   workspace: &mut FrameWorkspace,
-  noise_strength: f32,
   frame_index: u64
 ) {
-  // Match ImageRot's post stack: chroma shift, grayscale, noise, brightness.
+  // Post stack: chroma shift, grayscale, brightness.
   let chroma_shift = 2;
   if chroma_shift > 0 {
     chroma_shift_horizontal(
@@ -552,7 +730,8 @@ fn apply_pixelsort_fx(
   }
 
   let gray_mix = 0.275;
-  let noise_amount = (noise_strength * 10.0).clamp(0.0, 10.0);
+  // Noise removed to keep output sizes predictable on high-variance frames.
+  let noise_amount = 0.0;
   let brightness = -2.0;
   apply_grade_noise(
     &mut workspace.output,
@@ -601,6 +780,7 @@ fn apply_grade_noise(
   let mut rng = seed ^ (frame_index as u32).wrapping_mul(1664525);
   let noise_amp = noise_amount.round().clamp(0.0, 24.0) as i32;
   let bright = brightness.round() as i32;
+  let use_noise = noise_amp > 0;
 
   for y in 0..height {
     for x in 0..width {
@@ -613,8 +793,8 @@ fn apply_grade_noise(
       let mixed_g = blend_channel(g, gray, gray_mix);
       let mixed_b = blend_channel(b, gray, gray_mix);
 
-      rng = rng.wrapping_mul(1664525).wrapping_add(1013904223);
-      let noise = if noise_amp > 0 {
+      let noise = if use_noise {
+        rng = rng.wrapping_mul(1664525).wrapping_add(1013904223);
         let sample = ((rng >> 16) & 0xFF) as i32;
         (sample % (noise_amp * 2 + 1)) - noise_amp
       } else {
@@ -662,6 +842,32 @@ fn build_preview_raw_path(tag: &str) -> PathBuf {
     .unwrap_or(0);
   let file_name = format!("bitrot-preview-{safe_tag}-{nonce}.rgba");
   std::env::temp_dir().join(file_name)
+}
+
+// Normalizes paths for comparison without touching the filesystem.
+fn normalize_path_for_compare(value: &str) -> String {
+  value
+    .trim()
+    .trim_matches('"')
+    .replace('\\', "/")
+    .trim_end_matches('/')
+    .to_string()
+}
+
+fn paths_match(left: &str, right: &str) -> bool {
+  let left = normalize_path_for_compare(left);
+  let right = normalize_path_for_compare(right);
+  if left.is_empty() || right.is_empty() {
+    return false;
+  }
+  #[cfg(windows)]
+  {
+    left.eq_ignore_ascii_case(&right)
+  }
+  #[cfg(not(windows))]
+  {
+    left == right
+  }
 }
 
 fn normalize_trim_range(start: Option<f64>, end: Option<f64>) -> Option<(f64, f64)> {
@@ -790,6 +996,18 @@ fn build_encode_args(
       encoding.preset.clone(),
       "-crf".into(),
       crf.to_string()
+    ]);
+  }
+
+  if let Some(max_bitrate) = encoding.max_bitrate_kbps {
+    // Apply a VBV cap to avoid runaway file sizes on high-variance frames.
+    let maxrate = max_bitrate.max(1200);
+    let bufsize = maxrate.saturating_mul(2);
+    args.extend([
+      "-maxrate".into(),
+      format!("{maxrate}k"),
+      "-bufsize".into(),
+      format!("{bufsize}k")
     ]);
   }
 
@@ -1065,6 +1283,10 @@ pub async fn pixelsort_process(
   preview_enabled: bool,
   encoding: PixelsortEncoding
 ) -> Result<(), String> {
+  if paths_match(&input_path, &output_path) {
+    return Err("Output path matches the input file. Choose a different output name.".into());
+  }
+
   let cancel_flag = state.register(&job_id);
   emit_log(&window, &job_id, "Pixel sort started.");
 
@@ -1121,7 +1343,9 @@ pub async fn pixelsort_process(
     .spawn()
     .map_err(|error| format!("Failed to spawn encoder: {error}"))?;
 
+  // Accumulate decoder output without per-frame drains.
   let mut buffer: Vec<u8> = Vec::with_capacity(frame_size * 2);
+  let mut read_offset = 0usize;
   let mut workspace = FrameWorkspace::new(safe_width as usize, safe_height as usize);
   let mut processed_frames = 0u64;
   let mut last_progress = Instant::now();
@@ -1203,13 +1427,25 @@ pub async fn pixelsort_process(
     match event {
       CommandEvent::Stdout(bytes) => {
         buffer.extend(bytes);
-        while buffer.len() >= frame_size {
-          let frame = buffer.drain(..frame_size).collect::<Vec<u8>>();
-          let processed = pixelsort_frame(&frame, &mut workspace, &config, processed_frames);
+        while buffer.len().saturating_sub(read_offset) >= frame_size {
+          let end = read_offset + frame_size;
+          let frame = &buffer[read_offset..end];
+          read_offset = end;
+          let processed = pixelsort_frame(frame, &mut workspace, &config, processed_frames);
           encode_child
             .write(&processed)
             .map_err(|error| format!("Failed to write frame: {error}"))?;
           processed_frames += 1;
+
+          // Periodically compact the buffer to keep memory bounded.
+          if read_offset >= frame_size * 4 {
+            buffer.copy_within(read_offset.., 0);
+            buffer.truncate(buffer.len().saturating_sub(read_offset));
+            read_offset = 0;
+          } else if read_offset == buffer.len() {
+            buffer.clear();
+            read_offset = 0;
+          }
 
           if let Some(preview_path) = preview_path.as_ref() {
             if preview_every > 0

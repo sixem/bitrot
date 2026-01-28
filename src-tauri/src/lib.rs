@@ -84,6 +84,15 @@ fn executable_file_exists(name: String) -> Result<bool, String> {
 }
 
 #[tauri::command]
+fn path_exists(path: String) -> Result<bool, String> {
+  let trimmed = path.trim();
+  if trimmed.is_empty() {
+    return Ok(false);
+  }
+  Ok(Path::new(trimmed).exists())
+}
+
+#[tauri::command]
 fn reveal_in_folder(path: String) -> Result<(), String> {
   let trimmed = path.trim();
   if trimmed.is_empty() {
@@ -165,6 +174,7 @@ pub fn run() {
       cleanup_files,
       get_executable_dir,
       executable_file_exists,
+      path_exists,
       reveal_in_folder,
       pixelsort::pixelsort_process,
       pixelsort::pixelsort_cancel,
