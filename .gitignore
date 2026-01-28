@@ -18,6 +18,8 @@ src-tauri/binaries/*
 /reference
 codex-target/
 src-tauri/target-codex*/
+portable/
+portable.zip
 
 # Node + Vite
 node_modules
