@@ -1,5 +1,5 @@
 {
-  "$schema": "../gen/schemas/desktop-schema.json",
+  "$schema": "./gen/schemas/desktop-schema.json",
   "productName": "Bitrot",
   "version": "0.1.0",
   "identifier": "com.bitrot.app",
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Bitrot",
+        "title": "BitRot",
         "width": 1200,
         "height": 800,
         "resizable": true,
@@ -30,7 +30,13 @@
   },
   "bundle": {
     "active": true,
+    "icon": ["icons/icon.ico", "icons/icon.icns", "icons/icon.png"],
     "externalBin": ["binaries/ffmpeg", "binaries/ffprobe"],
     "targets": "all"
+  },
+  "plugins": {
+    "shell": {
+      "open": ".+"
+    }
   }
 }

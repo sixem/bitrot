@@ -12,6 +12,8 @@
     "core:menu:default",
     "core:tray:default",
     "core:window:allow-set-title",
+    "core:window:allow-set-progress-bar",
+    "shell:allow-open",
     {
       "identifier": "shell:allow-execute",
       "allow": [
@@ -23,6 +25,16 @@
         {
           "name": "binaries/ffprobe",
           "sidecar": true,
+          "args": true
+        },
+        {
+          "name": "ffmpeg",
+          "cmd": "ffmpeg",
+          "args": true
+        },
+        {
+          "name": "ffprobe",
+          "cmd": "ffprobe",
           "args": true
         }
       ]
@@ -39,6 +51,16 @@
           "name": "binaries/ffprobe",
           "sidecar": true,
           "args": true
+        },
+        {
+          "name": "ffmpeg",
+          "cmd": "ffmpeg",
+          "args": true
+        },
+        {
+          "name": "ffprobe",
+          "cmd": "ffprobe",
+          "args": true
         }
       ]
     },
@@ -52,6 +74,14 @@
         {
           "name": "binaries/ffprobe",
           "sidecar": true
+        },
+        {
+          "name": "ffmpeg",
+          "cmd": "ffmpeg"
+        },
+        {
+          "name": "ffprobe",
+          "cmd": "ffprobe"
         }
       ]
     },
