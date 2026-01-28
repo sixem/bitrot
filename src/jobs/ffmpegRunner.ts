@@ -36,6 +36,8 @@ type FfmpegRunOptions = {
   modeId?: ModeId;
   modeConfig?: ModeConfigMap[ModeId];
   encodingId?: EncodingId;
+  trimStartSeconds?: number;
+  trimEndSeconds?: number;
 };
 
 type FfmpegRunCallbacks = {
@@ -77,12 +79,37 @@ const buildContainerArgs = (outputPath: string) => {
     : [];
 };
 
+const normalizeTrimRange = (start?: number, end?: number) => {
+  if (typeof start !== "number" || typeof end !== "number") {
+    return undefined;
+  }
+  const safeStart = Math.max(0, start);
+  const safeEnd = Math.max(0, end);
+  if (!Number.isFinite(safeStart) || !Number.isFinite(safeEnd)) {
+    return undefined;
+  }
+  if (safeEnd <= safeStart) {
+    return undefined;
+  }
+  return { start: safeStart, end: safeEnd };
+};
+
+const buildTrimArgs = (start?: number, end?: number) => {
+  const range = normalizeTrimRange(start, end);
+  if (!range) {
+    return [];
+  }
+  return ["-ss", range.start.toFixed(3), "-to", range.end.toFixed(3)];
+};
+
 const buildArgs = (
   inputPath: string,
   outputPath: string,
   modeId?: ModeId,
   modeConfig?: ModeConfigMap[ModeId],
-  encodingId?: EncodingId
+  encodingId?: EncodingId,
+  trimStartSeconds?: number,
+  trimEndSeconds?: number
 ) => {
   const mode = getModeDefinition(modeId);
   const resolvedConfig = modeConfig ?? mode.defaultConfig;
@@ -93,6 +120,7 @@ const buildArgs = (
     "-hide_banner",
     "-i",
     inputPath,
+    ...buildTrimArgs(trimStartSeconds, trimEndSeconds),
     "-map",
     "0:v:0",
     "-map",
@@ -154,6 +182,8 @@ export const runFfmpegJob = async (
       options.durationSeconds,
       datamoshConfig,
       encodingId,
+      options.trimStartSeconds,
+      options.trimEndSeconds,
       callbacks
     );
   }
@@ -169,6 +199,8 @@ export const runFfmpegJob = async (
       options.durationSeconds,
       pixelsortConfig,
       encodingId,
+      options.trimStartSeconds,
+      options.trimEndSeconds,
       callbacks
     );
   }
@@ -178,7 +210,9 @@ export const runFfmpegJob = async (
     outputPath,
     options.modeId,
     options.modeConfig,
-    options.encodingId
+    options.encodingId,
+    options.trimStartSeconds,
+    options.trimEndSeconds
   );
   debug("ffmpeg args: %o", args);
   const feedProgress = createFfmpegProgressParser(

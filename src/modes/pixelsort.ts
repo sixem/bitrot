@@ -13,7 +13,7 @@ export type PixelsortConfig = {
 export const defaultPixelsortConfig: PixelsortConfig = {
   intensity: 100,
   threshold: 50,
-  maxThreshold: 200,
+  maxThreshold: 110,
   blockSize: 4,
   direction: "vertical",
   noise: 5

@@ -112,7 +112,9 @@ const useFfmpegJob = () => {
       outputPath?: string,
       modeId?: ModeId,
       modeConfig?: ModeConfigMap[ModeId],
-      encodingId?: EncodingId
+      encodingId?: EncodingId,
+      trimStartSeconds?: number,
+      trimEndSeconds?: number
     ) => {
       if (!asset.path || asset.path.trim().length === 0) {
         return;
@@ -144,7 +146,9 @@ const useFfmpegJob = () => {
             outputPath: resolvedOutputPath,
             modeId,
             modeConfig,
-            encodingId
+            encodingId,
+            trimStartSeconds,
+            trimEndSeconds
           },
           {
             onProgress: (progress) => {

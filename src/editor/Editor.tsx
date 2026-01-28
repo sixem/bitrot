@@ -17,6 +17,7 @@ import { revealInFolder } from "@/system/reveal";
 import ExportModal, { type ExportSettings } from "@/editor/ExportModal";
 import ReceiptModal from "@/editor/ReceiptModal";
 import useEditorTopRowHeight from "@/editor/useEditorTopRowHeight";
+import useTrimSelection from "@/editor/useTrimSelection";
 import {
   createModeConfigs,
   type ModeConfigMap,
@@ -45,6 +46,15 @@ const Editor = ({ asset, onReplace }: EditorProps) => {
   } | null>(null);
   const [modeId, setModeId] = useState<ModeId>("analog");
   const lastAssetPathRef = useRef(asset.path);
+  const metadataDurationSeconds =
+    typeof metadataState.metadata?.durationSeconds === "number" &&
+    Number.isFinite(metadataState.metadata.durationSeconds)
+      ? metadataState.metadata.durationSeconds
+      : undefined;
+  const trimSelection = useTrimSelection({
+    durationSeconds: metadataDurationSeconds,
+    resetKey: asset.path
+  });
   const [modeConfigs, setModeConfigs] = useState<ModeConfigMap>(() =>
     createModeConfigs()
   );
@@ -53,7 +63,8 @@ const Editor = ({ asset, onReplace }: EditorProps) => {
     modeId,
     modeConfig: modeConfigs[modeId],
     metadata: metadataState.metadata,
-    isProcessing: job.status === "running"
+    isProcessing: job.status === "running",
+    trim: trimSelection.selection
   });
   const statusLabel =
     metadataState.status === "loading"
@@ -67,11 +78,6 @@ const Editor = ({ asset, onReplace }: EditorProps) => {
   const folderPath = asset.path
     ? asset.path.replace(/[/\\\\][^/\\\\]+$/, "")
     : "--";
-  const metadataDurationSeconds =
-    typeof metadataState.metadata?.durationSeconds === "number" &&
-    Number.isFinite(metadataState.metadata.durationSeconds)
-      ? metadataState.metadata.durationSeconds
-      : undefined;
   const metadataSizeBytes =
     typeof metadataState.metadata?.sizeBytes === "number" &&
     Number.isFinite(metadataState.metadata.sizeBytes)
@@ -82,6 +88,19 @@ const Editor = ({ asset, onReplace }: EditorProps) => {
     Number.isFinite(metadataState.metadata.fps)
       ? metadataState.metadata.fps
       : undefined;
+  const trimEnabled = trimSelection.selection.enabled && trimSelection.selection.isValid;
+  const trimStartSeconds =
+    trimEnabled && typeof trimSelection.selection.start === "number"
+      ? trimSelection.selection.start
+      : undefined;
+  const trimEndSeconds =
+    trimEnabled && typeof trimSelection.selection.end === "number"
+      ? trimSelection.selection.end
+      : undefined;
+  const trimmedDurationSeconds =
+    trimStartSeconds !== undefined && trimEndSeconds !== undefined
+      ? Math.max(0, trimEndSeconds - trimStartSeconds)
+      : metadataDurationSeconds;
   const defaultOutputPath = buildDefaultOutputPath(
     asset.path,
     modeId === "copy" ? undefined : "mp4"
@@ -129,6 +148,14 @@ const Editor = ({ asset, onReplace }: EditorProps) => {
     typeof job.progress.etaSeconds === "number" &&
     Number.isFinite(job.progress.etaSeconds)
       ? job.progress.etaSeconds
+      : undefined;
+  const renderTimeSeconds =
+    job.status === "running" &&
+    typeof job.progress.outTimeSeconds === "number" &&
+    Number.isFinite(job.progress.outTimeSeconds)
+      ? trimStartSeconds !== undefined
+        ? trimStartSeconds + job.progress.outTimeSeconds
+        : job.progress.outTimeSeconds
       : undefined;
   const isExportDisabled = job.status === "running";
   const lastRunRef = useRef<{
@@ -205,11 +232,13 @@ const Editor = ({ asset, onReplace }: EditorProps) => {
     };
     run(
       asset,
-      metadataState.metadata?.durationSeconds,
+      trimmedDurationSeconds,
       nextOutputPath,
       modeId,
       modeConfigs[modeId],
-      encodingId
+      encodingId,
+      trimStartSeconds,
+      trimEndSeconds
     );
   };
 
@@ -253,10 +282,10 @@ const Editor = ({ asset, onReplace }: EditorProps) => {
           <VideoPreview
             asset={asset}
             fallbackDuration={metadataState.metadata?.durationSeconds}
+            fps={metadataFps}
             preview={previewControl}
-            renderTimeSeconds={
-              job.status === "running" ? job.progress.outTimeSeconds : undefined
-            }
+            renderTimeSeconds={renderTimeSeconds}
+            trim={trimSelection}
           />
           </article>
         </div>

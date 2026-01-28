@@ -28,6 +28,11 @@ type DatamoshCallbacks = {
   onError: (message: string) => void;
 };
 
+type TrimRange = {
+  start: number;
+  end: number;
+};
+
 export type DatamoshRunHandle = {
   outputPath: string;
   cancel: () => Promise<void>;
@@ -62,6 +67,28 @@ const buildContainerArgs = (outputPath: string) => {
     : [];
 };
 
+const normalizeTrimRange = (start?: number, end?: number) => {
+  if (typeof start !== "number" || typeof end !== "number") {
+    return undefined;
+  }
+  const safeStart = Math.max(0, start);
+  const safeEnd = Math.max(0, end);
+  if (!Number.isFinite(safeStart) || !Number.isFinite(safeEnd)) {
+    return undefined;
+  }
+  if (safeEnd <= safeStart) {
+    return undefined;
+  }
+  return { start: safeStart, end: safeEnd } satisfies TrimRange;
+};
+
+const buildTrimArgs = (trim?: TrimRange) => {
+  if (!trim) {
+    return [];
+  }
+  return ["-ss", trim.start.toFixed(3), "-to", trim.end.toFixed(3)];
+};
+
 const ensureDatamoshContainer = (outputPath: string) => {
   const extension = getExtension(outputPath);
   if (extension === "mp4" || extension === "m4v" || extension === "mkv") {
@@ -76,13 +103,15 @@ const buildNormalizeArgs = (
   inputPath: string,
   outputPath: string,
   gopSize: number,
-  forceKeyframes: number[]
+  forceKeyframes: number[],
+  trim?: TrimRange
 ) => {
   const args = [
     "-y",
     "-hide_banner",
     "-i",
     inputPath,
+    ...buildTrimArgs(trim),
     // Some files have multiple video streams; always pick the first real video track.
     "-map",
     "0:v:0",
@@ -121,11 +150,16 @@ const parseSceneTimes = (raw: string) => {
   return [...times].sort((a, b) => a - b);
 };
 
-const detectSceneCuts = async (inputPath: string, threshold: number) => {
+const detectSceneCuts = async (
+  inputPath: string,
+  threshold: number,
+  trim?: TrimRange
+) => {
   const args = [
     "-hide_banner",
     "-i",
     inputPath,
+    ...buildTrimArgs(trim),
     // Align scene detection with normalization by forcing the first video stream.
     "-map",
     "0:v:0",
@@ -370,6 +404,8 @@ export const runDatamoshJob = async (
   durationSeconds: number | undefined,
   config: DatamoshConfig,
   encodingId: EncodingId,
+  trimStartSeconds: number | undefined,
+  trimEndSeconds: number | undefined,
   callbacks: DatamoshCallbacks
 ): Promise<DatamoshRunHandle> => {
   const inputPath = sanitizePath(asset.path);
@@ -388,6 +424,7 @@ export const runDatamoshJob = async (
   const moshLength = Math.max(0, config.moshLengthSeconds);
   const resolvedEncodingId = encodingId ?? DEFAULT_ENCODING_ID;
   const encodingPreset = getEncodingPreset(resolvedEncodingId);
+  const trimRange = normalizeTrimRange(trimStartSeconds, trimEndSeconds);
 
   debug("runDatamoshJob start");
   debug("paths: input=%s output=%s temp=%s", inputPath, cleanOutput, tempPath);
@@ -408,9 +445,9 @@ export const runDatamoshJob = async (
   let durationForProgress = durationSeconds;
 
   try {
-    const cuts = await detectSceneCuts(inputPath, threshold);
+    const cuts = await detectSceneCuts(inputPath, threshold, trimRange);
     debug("scene cuts: %o", cuts.slice(0, 12));
-    const normalizeArgs = buildNormalizeArgs(inputPath, tempPath, gopSize, cuts);
+    const normalizeArgs = buildNormalizeArgs(inputPath, tempPath, gopSize, cuts, trimRange);
     debug("normalize args: %o", normalizeArgs);
     const { output: normalizeOutput, source: normalizeSource } =
       await executeWithFallback("ffmpeg", normalizeArgs);

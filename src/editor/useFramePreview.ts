@@ -3,6 +3,7 @@ import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type { VideoAsset } from "@/domain/video";
 import type { VideoMetadata } from "@/system/ffprobe";
+import type { TrimSelectionState } from "@/editor/useTrimSelection";
 import type { ModeConfigMap, ModeId } from "@/modes/definitions";
 import type { PixelsortConfig } from "@/modes/pixelsort";
 import makeDebug from "@/utils/debug";
@@ -13,6 +14,7 @@ type FramePreviewOptions = {
   modeConfig: ModeConfigMap[ModeId];
   metadata?: VideoMetadata;
   isProcessing: boolean;
+  trim?: TrimSelectionState;
 };
 
 export type FramePreviewControl = {
@@ -60,7 +62,8 @@ const useFramePreview = ({
   modeId,
   modeConfig,
   metadata,
-  isProcessing
+  isProcessing,
+  trim
 }: FramePreviewOptions): FramePreviewControl => {
   const isSupported = isPixelsortMode(modeId);
   const [manualPreview, setManualPreview] = useState<PreviewState>({
@@ -168,11 +171,22 @@ const useFramePreview = ({
         durationSeconds > 0
           ? Math.min(clampedTime, Math.max(0, durationSeconds - epsilon))
           : clampedTime;
+      const trimActive =
+        !!trim?.enabled &&
+        !!trim.isValid &&
+        typeof trim.start === "number" &&
+        typeof trim.end === "number";
+      const trimmedTime = trimActive
+        ? Math.min(
+            Math.max(safeTime, trim.start),
+            Math.max(trim.start, trim.end - epsilon)
+          )
+        : safeTime;
 
       try {
         const response = await invoke<PixelsortPreviewResponse>("pixelsort_preview", {
           inputPath: asset.path,
-          timeSeconds: safeTime,
+          timeSeconds: trimmedTime,
           width: metadata.width,
           height: metadata.height,
           config: modeConfig as PixelsortConfig
@@ -180,7 +194,7 @@ const useFramePreview = ({
 
         const frame =
           typeof metadata.fps === "number" && Number.isFinite(metadata.fps)
-            ? Math.max(0, Math.round(safeTime * metadata.fps))
+            ? Math.max(0, Math.round(trimmedTime * metadata.fps))
             : undefined;
 
         setManualPreview({
@@ -200,7 +214,7 @@ const useFramePreview = ({
         });
       }
     },
-    [asset.path, isSupported, metadata, modeConfig]
+    [asset.path, isSupported, metadata, modeConfig, trim]
   );
 
   const clearPreview = useCallback(() => {

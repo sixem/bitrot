@@ -44,6 +44,34 @@ const debug = makeDebug("jobs:pixelsort");
 
 const sanitizePath = (value: string) => value.trim().replace(/^"+|"+$/g, "");
 
+type TrimRange = {
+  start: number;
+  end: number;
+};
+
+const normalizeTrimRange = (
+  start?: number,
+  end?: number,
+  duration?: number
+) => {
+  if (typeof start !== "number" || typeof end !== "number") {
+    return undefined;
+  }
+  const safeStart = Math.max(0, start);
+  const safeEnd = Math.max(0, end);
+  if (!Number.isFinite(safeStart) || !Number.isFinite(safeEnd)) {
+    return undefined;
+  }
+  if (safeEnd <= safeStart) {
+    return undefined;
+  }
+  const clampedEnd =
+    typeof duration === "number" && Number.isFinite(duration)
+      ? Math.min(safeEnd, duration)
+      : safeEnd;
+  return { start: safeStart, end: clampedEnd } satisfies TrimRange;
+};
+
 const createJobId = () =>
   `pixelsort-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
 
@@ -128,6 +156,8 @@ export const runPixelsortJob = async (
   durationSeconds: number | undefined,
   config: PixelsortConfig,
   encodingId: EncodingId,
+  trimStartSeconds: number | undefined,
+  trimEndSeconds: number | undefined,
   callbacks: PixelsortCallbacks
 ): Promise<PixelsortRunHandle> => {
   const inputPath = sanitizePath(asset.path);
@@ -139,7 +169,14 @@ export const runPixelsortJob = async (
   const metadata = await probeVideo(inputPath);
   const safeFps =
     typeof metadata.fps === "number" && metadata.fps > 0 ? metadata.fps : 30;
-  const resolvedDuration = metadata.durationSeconds ?? durationSeconds;
+  const trimRange = normalizeTrimRange(
+    trimStartSeconds,
+    trimEndSeconds,
+    metadata.durationSeconds
+  );
+  const resolvedDuration = trimRange
+    ? Math.max(0, trimRange.end - trimRange.start)
+    : metadata.durationSeconds ?? durationSeconds;
   const { width, height, adjusted } = resolveDimensions(
     metadata.width,
     metadata.height
@@ -164,6 +201,8 @@ export const runPixelsortJob = async (
     durationSeconds: resolvedDuration,
     config,
     previewEnabled: true,
+    trimStartSeconds: trimRange?.start,
+    trimEndSeconds: trimRange?.end,
     encoding: {
       encoder: encoding.encoder,
       preset: encoding.preset,
