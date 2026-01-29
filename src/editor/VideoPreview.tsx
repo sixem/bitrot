@@ -62,8 +62,8 @@ const MIN_SCRUB_STEP_SECONDS = 0.001;
 const TRIM_TRACK_BASE_COLOR = "#131313";
 // Playback cadence for arrow-key holds.
 const HOLD_PLAYBACK_RATE = 1.0;
-// Reverse has to be simulated, so step once per second for consistency.
-const REVERSE_STEP_INTERVAL_MS = 1000;
+// Reverse has to be simulated, so step at the effective FPS rate.
+const MIN_REVERSE_STEP_INTERVAL_MS = 5;
 
 const findNearestFrameIndex = (frames: ArrayLike<number>, timeSeconds: number) => {
   let low = 0;
@@ -224,6 +224,23 @@ const VideoPreview = ({
   const canRequestFrameMap = isVfr && !hasFrameMap && !!onRequestFrameMap;
   const frameMapErrorLabel = frameMapError?.split("\n")[0]?.trim();
   const frameMapStep = useMemo(() => getMinFrameStep(frameMapFrames), [frameMapFrames]);
+  const derivedDuration =
+    typeof resolvedDuration === "number" && Number.isFinite(resolvedDuration)
+      ? resolvedDuration
+      : frameMapFrames && frameMapFrames.length > 0
+        ? frameMapFrames[frameMapFrames.length - 1]
+        : undefined;
+  const derivedFps =
+    resolvedFps ??
+    (frameMapFrames && derivedDuration && derivedDuration > 0
+      ? frameMapFrames.length / derivedDuration
+      : undefined);
+  const reverseStepIntervalMs = useMemo(() => {
+    if (typeof derivedFps !== "number" || !Number.isFinite(derivedFps) || derivedFps <= 0) {
+      return 1000;
+    }
+    return Math.max(MIN_REVERSE_STEP_INTERVAL_MS, 1000 / derivedFps);
+  }, [derivedFps]);
   const vfrWarningMessage = useMemo(
     () => getVfrWarningMessage(isVfr, hasFrameMap, frameMapStatus, frameMapErrorLabel),
     [frameMapErrorLabel, frameMapStatus, hasFrameMap, isVfr]
@@ -678,7 +695,7 @@ const VideoPreview = ({
       }
       reverseIntervalRef.current = window.setInterval(() => {
         seekByFrames(-1);
-      }, REVERSE_STEP_INTERVAL_MS);
+      }, reverseStepIntervalMs);
     },
     [
       canRequestFrameMap,
@@ -686,6 +703,7 @@ const VideoPreview = ({
       frameDurationSeconds,
       handleRequestFrameMap,
       hasFrameMap,
+      reverseStepIntervalMs,
       seekByFrames,
       sourceUrl
     ]

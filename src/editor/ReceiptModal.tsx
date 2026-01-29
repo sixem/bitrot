@@ -148,7 +148,6 @@ const ReceiptModal = ({
       await revealInFolder(outputPath);
     } catch (error) {
       debug("reveal failed: %O", error);
-      setStatus("Unable to open the output folder.");
     }
   };
 
