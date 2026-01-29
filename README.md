@@ -42,6 +42,7 @@ Install and run:
 
 ```bash
 pnpm install
+pnpm run setup:ffmpeg # to load the ffmpeg/ffprobe binaries from PATH
 pnpm tauri dev
 ```
 

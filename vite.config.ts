@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { defineConfig } from "vite";
+import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react-swc";
 
 // Pull version from package.json so the UI can display it consistently.
@@ -44,5 +44,10 @@ export default defineConfig({
   },
   define: {
     __APP_VERSION__: JSON.stringify(packageJson.version ?? "0.0.0")
+  },
+  test: {
+    environment: "node",
+    include: ["src/**/*.test.ts"],
+    exclude: ["node_modules", "dist", "src-tauri"]
   }
 });
