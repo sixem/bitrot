@@ -47,11 +47,18 @@ const findOnPath = (name) => {
   }
 };
 
-const copySidecar = (sourcePath, baseName, triple, ext) => {
-  const fileName = `${baseName}-${triple}${ext}`;
+const copySidecar = (sourcePath, fileName) => {
   const destPath = path.join(binariesDir, fileName);
   copyFileSync(sourcePath, destPath);
   return destPath;
+};
+
+const copyWithBothNames = (sourcePath, baseName, triple, ext) => {
+  const tripleName = `${baseName}-${triple}${ext}`;
+  const baseNameWithExt = `${baseName}${ext}`;
+  const triplePath = copySidecar(sourcePath, tripleName);
+  const basePath = copySidecar(sourcePath, baseNameWithExt);
+  return { triplePath, basePath };
 };
 
 const main = () => {
@@ -80,8 +87,13 @@ const main = () => {
 
   mkdirSync(binariesDir, { recursive: true });
 
-  const ffmpegDest = copySidecar(ffmpegPath, "ffmpeg", target.triple, target.ext);
-  const ffprobeDest = copySidecar(
+  const ffmpegDest = copyWithBothNames(
+    ffmpegPath,
+    "ffmpeg",
+    target.triple,
+    target.ext
+  );
+  const ffprobeDest = copyWithBothNames(
     ffprobePath,
     "ffprobe",
     target.triple,
@@ -89,9 +101,10 @@ const main = () => {
   );
 
   console.log("FFmpeg sidecars copied:");
-  console.log(`- ffmpeg:  ${ffmpegDest}`);
-  console.log(`- ffprobe: ${ffprobeDest}`);
+  console.log(`- ffmpeg (triple): ${ffmpegDest.triplePath}`);
+  console.log(`- ffmpeg (base):   ${ffmpegDest.basePath}`);
+  console.log(`- ffprobe (triple): ${ffprobeDest.triplePath}`);
+  console.log(`- ffprobe (base):   ${ffprobeDest.basePath}`);
 };
 
 main();
-

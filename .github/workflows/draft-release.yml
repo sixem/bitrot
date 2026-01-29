@@ -19,17 +19,21 @@ jobs:
           - os: windows-latest
             artifact-name: windows-binary
             upload-path: |
+              src-tauri/target/release/bitrot.exe
               src-tauri/target/release/bundle/msi/*.msi
               src-tauri/target/release/bundle/nsis/*.exe
           - os: ubuntu-latest
             artifact-name: linux-binary
             upload-path: |
+              src-tauri/target/release/bitrot
               src-tauri/target/release/bundle/deb/*.deb
               src-tauri/target/release/bundle/rpm/*.rpm
               src-tauri/target/release/bundle/appimage/*.AppImage
           - os: macos-latest
             artifact-name: macos-binary
-            upload-path: src-tauri/target/release/bundle/dmg/*.dmg
+            upload-path: |
+              src-tauri/target/release/bitrot
+              src-tauri/target/release/bundle/dmg/*.dmg
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
