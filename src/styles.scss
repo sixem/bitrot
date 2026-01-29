@@ -1,6 +1,13 @@
 @use "@/theme" as theme;
 // Global styles for the BitRot landing screen.
-@import url("https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&family=Space+Grotesk:wght@400;500;600&display=swap");
+
+@font-face {
+  font-family: "Cinzel";
+  src: url("./assets/fonts/cinzel/Cinzel-VariableFont_wght.ttf") format("truetype");
+  font-weight: 400 900;
+  font-style: normal;
+  font-display: swap;
+}
 
 :root {
   color-scheme: dark;
@@ -427,9 +434,23 @@ body {
 
 .receipt-actions {
   display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.receipt-actions-row {
+  display: flex;
   justify-content: flex-end;
   gap: 10px;
   flex-wrap: wrap;
+}
+
+.receipt-actions-row .modal-button {
+  flex: 1 1 140px;
+}
+
+.receipt-close-button {
+  width: 100%;
 }
 
 .export-form {
@@ -1168,8 +1189,28 @@ body {
   color: rgba(255, 198, 120, 0.95);
   text-transform: uppercase;
   letter-spacing: 0.12em;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 
+.preview-warning-action {
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--fg);
+  padding: 4px 8px;
+  border-radius: var(--radius-pill);
+  font-size: 0.6rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.preview-warning-action:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
 .preview-scrub {
   width: 100%;
   appearance: none;
