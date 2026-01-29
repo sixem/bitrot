@@ -1,4 +1,4 @@
-# BitRot ⚡
+﻿# BitRot
 
 ![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=fff)
 ![Sass](https://img.shields.io/badge/Sass-C69?logo=sass&logoColor=fff)
@@ -6,19 +6,16 @@
 ![Vite](https://img.shields.io/badge/Vite-646CFF?logo=vite&logoColor=fff)
 ![React](https://img.shields.io/badge/React-20232A?logo=react&logoColor=fff)
 
-A simple interface for creating glitchy video effects 💫
+A simple interface for creating glitchy video effects.
 
 ## Features
 
 - Drag-and-drop video input anywhere in the app
-  
 - Multiple processing modes:
   - **Analog**: light grit and clarity tweaks
   - **Chroma glitch**: chroma shifts, decay trails, and noise
   - **Datamosh (classic)**: scene-aware I-frame removal
-    
 - FFmpeg + ffprobe sidecar workflow (works in dev and bundled builds)
-  
 - Export to web-friendly MP4 (H.264 + AAC)
 
 ## Showcase
@@ -35,7 +32,7 @@ Prereqs (typical Tauri + Vite stack):
 
 - Node 20.19+ or 22.12+
 - pnpm
-- Rust (*stable*)
+- Rust (stable)
 - Tauri system prereqs for your OS or distro
 
 Install and run:
@@ -45,6 +42,23 @@ pnpm install
 pnpm run setup:ffmpeg # to load the ffmpeg/ffprobe binaries from PATH
 pnpm tauri dev
 ```
+
+## Tests
+
+Frontend tests (Vitest):
+
+```bash
+pnpm test
+```
+
+Rust tests:
+
+```bash
+cd src-tauri
+cargo test
+```
+
+See `TEST_OUTLINE.md` for coverage details.
 
 ## Build + portable zip (Windows)
 
@@ -72,8 +86,8 @@ pnpm run setup:ffmpeg
 
 FFmpeg is resolved in this order:
 
-1. `ffmpeg(.exe)` / `ffprobe(.exe)` next to the binary (app) executable
-2. Sidecars in `binaries/` (packaged into app resources)
+1. `ffmpeg(.exe)` / `ffprobe(.exe)` next to the app executable (packaged builds)
+2. Sidecars in `binaries/` (packaged into app resources) or `src-tauri/binaries/` (dev)
 3. System `PATH` as a final fallback
 
 For development and building, use names that match your platform target triple:
@@ -81,11 +95,9 @@ For development and building, use names that match your platform target triple:
 - Windows (x64 MSVC):
   - `ffmpeg-x86_64-pc-windows-msvc.exe`
   - `ffprobe-x86_64-pc-windows-msvc.exe`
-  
 - macOS (Intel):
   - `ffmpeg-x86_64-apple-darwin`
   - `ffprobe-x86_64-apple-darwin`
-  
 - Linux (x64 GNU):
   - `ffmpeg-x86_64-unknown-linux-gnu`
   - `ffprobe-x86_64-unknown-linux-gnu`
@@ -98,4 +110,8 @@ Some files include multiple video tracks; BitRot always targets the first video 
 
 H.264 requires even dimensions. If a clip is odd-sized (for example 1921x1081), BitRot trims a single pixel to keep encoders happy.
 
-Datamoshing is *intentionally* destructive. Not every input will behave perfectly, and some videos may work better than others for certain effects.
+Datamoshing is intentionally destructive. Not every input will behave perfectly, and some videos may work better than others for certain effects.
+
+## License
+
+MIT. See `LICENSE`.
