@@ -62,11 +62,14 @@ const Editor = ({ asset, onReplace }: EditorProps) => {
   const [modeConfigs, setModeConfigs] = useState<ModeConfigMap>(() =>
     createModeConfigs()
   );
+  const metadataIsVfr = metadataState.metadata?.isVfr ?? false;
+  const frameMapState = useFrameMap(asset, metadataIsVfr, frameMapRequestId);
   const previewControl = useFramePreview({
     asset,
     modeId,
     modeConfig: modeConfigs[modeId],
     metadata: metadataState.metadata,
+    frameMap: frameMapState.frameMap,
     isProcessing: job.status === "running",
     trim: trimSelection.selection
   });
@@ -92,8 +95,6 @@ const Editor = ({ asset, onReplace }: EditorProps) => {
     Number.isFinite(metadataState.metadata.fps)
       ? metadataState.metadata.fps
       : undefined;
-  const metadataIsVfr = metadataState.metadata?.isVfr ?? false;
-  const frameMapState = useFrameMap(asset, metadataIsVfr, frameMapRequestId);
   const trimEnabled = trimSelection.selection.enabled && trimSelection.selection.isValid;
   const trimStartSeconds =
     trimEnabled && typeof trimSelection.selection.start === "number"

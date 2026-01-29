@@ -945,22 +945,37 @@ fn push_trim_args(args: &mut Vec<String>, trim: Option<(f64, f64)>) {
 fn build_preview_decode_args(
   input_path: &str,
   time_seconds: f64,
+  keyframe_seconds: Option<f64>,
   width: u32,
   height: u32,
   output_path: &PathBuf
 ) -> Vec<String> {
-  vec![
+  let target = time_seconds.max(0.0);
+  let anchor = keyframe_seconds.filter(|value| value.is_finite() && *value >= 0.0);
+  let pre_seek = anchor.filter(|value| *value <= target);
+  let post_seek = pre_seek.map_or(target, |value| (target - value).max(0.0));
+
+  let mut args = vec![
     "-y".into(),
     "-hide_banner".into(),
     "-loglevel".into(),
     "error".into(),
+  ];
+
+  if let Some(value) = pre_seek {
+    // Fast seek to the nearest keyframe, then accurately seek within the GOP.
+    args.push("-ss".into());
+    args.push(format!("{value:.3}"));
+  }
+
+  args.extend([
     "-i".into(),
     input_path.into(),
     "-map".into(),
     "0:v:0".into(),
     "-an".into(),
     "-ss".into(),
-    format!("{:.3}", time_seconds.max(0.0)),
+    format!("{post_seek:.3}"),
     "-frames:v".into(),
     "1".into(),
     "-vf".into(),
@@ -970,7 +985,9 @@ fn build_preview_decode_args(
     "-pix_fmt".into(),
     "rgba".into(),
     output_path.to_string_lossy().into_owned()
-  ]
+  ]);
+
+  args
 }
 
 fn build_preview_encode_args(width: u32, height: u32, output_path: &PathBuf) -> Vec<String> {
@@ -1177,12 +1194,13 @@ async fn decode_preview_frame(
   app: &AppHandle,
   input_path: &str,
   time_seconds: f64,
+  keyframe_seconds: Option<f64>,
   width: u32,
   height: u32
 ) -> Result<Vec<u8>, String> {
   let output_path = build_preview_raw_path("manual");
   let args =
-    build_preview_decode_args(input_path, time_seconds, width, height, &output_path);
+    build_preview_decode_args(input_path, time_seconds, keyframe_seconds, width, height, &output_path);
   let output = resolve_ffmpeg_command(app, "ffmpeg")?
     .args(args)
     .output()
@@ -1285,6 +1303,7 @@ pub async fn pixelsort_preview(
   app: AppHandle,
   input_path: String,
   time_seconds: f64,
+  keyframe_seconds: Option<f64>,
   width: u32,
   height: u32,
   config: PixelsortConfig
@@ -1300,7 +1319,14 @@ pub async fn pixelsort_preview(
   let safe_width = if width % 2 == 0 { width } else { width - 1 };
   let safe_height = if height % 2 == 0 { height } else { height - 1 };
 
-  let frame = decode_preview_frame(&app, &input_path, time_seconds, safe_width, safe_height)
+  let frame = decode_preview_frame(
+    &app,
+    &input_path,
+    time_seconds,
+    keyframe_seconds,
+    safe_width,
+    safe_height
+  )
     .await?;
   let mut workspace = FrameWorkspace::new(safe_width as usize, safe_height as usize);
   let processed = pixelsort_frame(&frame, &mut workspace, &config, 0);

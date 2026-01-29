@@ -12,7 +12,6 @@ import {
   cleanupJob,
   registerJobCleanup
 } from "@/jobs/jobCleanup";
-import useModal from "@/ui/modal/useModal";
 import makeDebug from "@/utils/debug";
 
 const initialProgress: JobProgress = {
@@ -59,90 +58,11 @@ const setTaskbarProgress = async (status: ProgressBarStatus, progress?: number) 
 
 // Tracks a single ffmpeg job and exposes run/cancel controls.
 const useFfmpegJob = () => {
-  const { openConfirm } = useModal();
   const [job, setJob] = useState<JobState>(initialState);
   const handleRef = useRef<FfmpegRunHandle | null>(null);
-  const runningRef = useRef(false);
   const cancelRef = useRef(false);
-  const closingRef = useRef(false);
   const logBufferRef = useRef<string[]>([]);
   const cleanupPathRef = useRef<string | null>(null);
-  const jobStatusRef = useRef<JobState["status"]>(initialState.status);
-
-  const requestCloseConfirmation = useCallback(async () => {
-    try {
-      return await openConfirm({
-        title: "Quit Bitrot",
-        message: "A render is still running. Cancel it and quit Bitrot?",
-        confirmLabel: "Quit",
-        cancelLabel: "Keep rendering"
-      });
-    } catch (error) {
-      debug("close confirmation failed: %O", error);
-    }
-
-    if (typeof window !== "undefined" && typeof window.confirm === "function") {
-      return window.confirm(
-        "A render is still running. Cancel it and quit Bitrot?"
-      );
-    }
-
-    return true;
-  }, [openConfirm]);
-
-  useEffect(() => {
-    jobStatusRef.current = job.status;
-  }, [job.status]);
-
-  useEffect(() => {
-    let unlisten: (() => void) | null = null;
-
-    appWindow
-      .onCloseRequested(async (event) => {
-        if (closingRef.current) {
-          return;
-        }
-
-        const isRunning =
-          runningRef.current || jobStatusRef.current === "running";
-        if (isRunning) {
-          event.preventDefault();
-          closingRef.current = true;
-          const shouldClose = await requestCloseConfirmation();
-          if (!shouldClose) {
-            closingRef.current = false;
-            return;
-          }
-
-          cancelRef.current = true;
-          try {
-            await handleRef.current?.cancel();
-          } catch (error) {
-            debug("cancel on close failed: %O", error);
-          }
-          await cleanupAllJobs();
-          try {
-            await appWindow.close();
-          } catch (error) {
-            debug("app close failed: %O", error);
-          }
-          closingRef.current = false;
-          return;
-        }
-      })
-      .then((stop) => {
-        unlisten = stop;
-      })
-      .catch((error) => {
-        debug("close listener failed: %O", error);
-      });
-
-    return () => {
-      if (unlisten) {
-        unlisten();
-      }
-    };
-  }, []);
 
   const run = useCallback(
     async (
@@ -159,10 +79,9 @@ const useFfmpegJob = () => {
       if (!asset.path || asset.path.trim().length === 0) {
         return;
       }
-      if (runningRef.current) {
+      if (job.status === "running") {
         return;
       }
-      runningRef.current = true;
       cancelRef.current = false;
       logBufferRef.current = [];
       const resolvedOutputPath =
@@ -221,7 +140,6 @@ const useFfmpegJob = () => {
               if (cancelRef.current) {
                 return;
               }
-              runningRef.current = false;
               void setTaskbarProgress(ProgressBarStatus.None, 0);
               const tail = logBufferRef.current.slice(-60);
               const errorWithTail = formatErrorWithLogs(message, tail);
@@ -236,7 +154,6 @@ const useFfmpegJob = () => {
               }));
             },
             onClose: (code) => {
-              runningRef.current = false;
               void setTaskbarProgress(ProgressBarStatus.None, 0);
               const tail = logBufferRef.current.slice(-60);
               const tailMessage = formatErrorWithLogs("ffmpeg failed", tail);
@@ -263,6 +180,8 @@ const useFfmpegJob = () => {
                     ? { ...prev.progress, percent: 100 }
                     : prev.progress
               }));
+              cancelRef.current = false;
+              handleRef.current = null;
             }
           }
         );
@@ -273,7 +192,6 @@ const useFfmpegJob = () => {
         cleanupPathRef.current = handle.outputPath;
         setJob((prev) => ({ ...prev, outputPath: handle.outputPath }));
       } catch (error) {
-        runningRef.current = false;
         if (cleanupPathRef.current) {
           void cleanupJob(cleanupPathRef.current, { keepOutput: false });
         }
@@ -287,7 +205,7 @@ const useFfmpegJob = () => {
         }));
       }
     },
-    []
+    [job.status]
   );
 
   const cancel = useCallback(async () => {
@@ -301,13 +219,13 @@ const useFfmpegJob = () => {
     cancelRef.current = true;
     await handle.cancel();
     handleRef.current = null;
-    runningRef.current = false;
     debug("run canceled");
     void setTaskbarProgress(ProgressBarStatus.None, 0);
     if (cleanupPathRef.current) {
       await cleanupJob(cleanupPathRef.current, { keepOutput: false });
     }
     setJob((prev) => resetProgressState("canceled", prev.outputPath));
+    cancelRef.current = false;
   }, []);
 
   return {

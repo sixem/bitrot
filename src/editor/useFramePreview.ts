@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import type { FrameMap } from "@/analysis/frameMap";
 import type { VideoAsset } from "@/domain/video";
 import type { VideoMetadata } from "@/system/ffprobe";
 import type { TrimSelectionState } from "@/editor/useTrimSelection";
@@ -13,6 +14,7 @@ type FramePreviewOptions = {
   modeId: ModeId;
   modeConfig: ModeConfigMap[ModeId];
   metadata?: VideoMetadata;
+  frameMap?: FrameMap;
   isProcessing: boolean;
   trim?: TrimSelectionState;
 };
@@ -56,12 +58,43 @@ const supportsPixelsortPreview = (modeId: ModeId) =>
 const buildPreviewUrl = (path: string) =>
   `${convertFileSrc(path)}?v=${Date.now()}`;
 
+// Finds the closest keyframe time at or before the requested time.
+const findKeyframeAnchor = (keyframes: Float64Array, timeSeconds: number) => {
+  if (!Number.isFinite(timeSeconds) || timeSeconds <= 0) {
+    return 0;
+  }
+  if (keyframes.length === 0) {
+    return undefined;
+  }
+  if (timeSeconds <= keyframes[0]) {
+    return keyframes[0];
+  }
+
+  let low = 0;
+  let high = keyframes.length - 1;
+  let best = keyframes[0];
+
+  while (low <= high) {
+    const mid = Math.floor((low + high) / 2);
+    const value = keyframes[mid];
+    if (value <= timeSeconds) {
+      best = value;
+      low = mid + 1;
+    } else {
+      high = mid - 1;
+    }
+  }
+
+  return best;
+};
+
 // Manages frame preview state for non-ffmpeg modes (currently pixelsort).
 const useFramePreview = ({
   asset,
   modeId,
   modeConfig,
   metadata,
+  frameMap,
   isProcessing,
   trim
 }: FramePreviewOptions): FramePreviewControl => {
@@ -182,11 +215,15 @@ const useFramePreview = ({
             Math.max(trim.start, trim.end - epsilon)
           )
         : safeTime;
+      const keyframeSeconds = frameMap?.keyframeTimes
+        ? findKeyframeAnchor(frameMap.keyframeTimes, trimmedTime)
+        : undefined;
 
       try {
         const response = await invoke<PixelsortPreviewResponse>("pixelsort_preview", {
           inputPath: asset.path,
           timeSeconds: trimmedTime,
+          keyframeSeconds,
           width: metadata.width,
           height: metadata.height,
           config: modeConfig as PixelsortConfig
@@ -214,7 +251,7 @@ const useFramePreview = ({
         });
       }
     },
-    [asset.path, isSupported, metadata, modeConfig, trim]
+    [asset.path, frameMap?.keyframeTimes, isSupported, metadata, modeConfig, trim]
   );
 
   const clearPreview = useCallback(() => {
@@ -230,7 +267,7 @@ const useFramePreview = ({
     ? frameLabel ?? "Previewing frame..."
     : manualPreview.isActive
       ? "Show original"
-      : "Preview frame";
+      : "Preview frame (estimate)";
   const isLoading = previewState.isLoading;
 
   return useMemo(
