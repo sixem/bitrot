@@ -5,6 +5,7 @@ import { createFfmpegProgressParser } from "@/jobs/ffmpegProgress";
 import { joinOutputPath, pathsMatch, splitOutputPath } from "@/jobs/output";
 import {
   SAFE_SCALE_FILTER,
+  getExtension,
   buildAudioArgs,
   buildContainerArgs
 } from "@/jobs/ffmpegArgs";

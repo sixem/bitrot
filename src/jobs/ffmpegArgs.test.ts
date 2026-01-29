@@ -2,6 +2,7 @@
 import { describe, expect, it } from "vitest";
 import {
   SAFE_SCALE_FILTER,
+  getExtension,
   buildAudioArgs,
   buildContainerArgs
 } from "@/jobs/ffmpegArgs";
@@ -28,5 +29,11 @@ describe("ffmpegArgs", () => {
 
   it("leaves container args empty for other extensions", () => {
     expect(buildContainerArgs("clip.webm")).toEqual([]);
+  });
+
+  it("extracts lowercase extensions from paths", () => {
+    expect(getExtension("clip.MP4")).toBe("mp4");
+    expect(getExtension("  /tmp/clip.m4v  ")).toBe("m4v");
+    expect(getExtension("no-extension")).toBe("");
   });
 });

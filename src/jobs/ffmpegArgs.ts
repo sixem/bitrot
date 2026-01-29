@@ -3,7 +3,7 @@
 // libx264 requires even dimensions; we trim odd pixels safely when needed.
 export const SAFE_SCALE_FILTER = "scale=trunc(iw/2)*2:trunc(ih/2)*2,setsar=1";
 
-const getExtension = (path: string) => {
+export const getExtension = (path: string) => {
   const clean = path.trim().toLowerCase();
   const dotIndex = clean.lastIndexOf(".");
   return dotIndex >= 0 ? clean.slice(dotIndex + 1) : "";
