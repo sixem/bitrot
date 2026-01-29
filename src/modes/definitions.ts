@@ -29,6 +29,10 @@ export type ModeId =
   | "pixelsort"
   | "datamosh";
 
+export type ModeEngine = "ffmpeg" | "native";
+export type ModeRunner = "ffmpeg" | "pixelsort" | "datamosh";
+export type ModePreview = "pixelsort";
+
 export type ModeConfigMap = {
   copy: Record<string, never>;
   analog: Record<string, never>;
@@ -43,6 +47,9 @@ export type ModeDefinition<T extends ModeId = ModeId> = {
   id: T;
   label: string;
   description: string;
+  engine: ModeEngine;
+  runner: ModeRunner;
+  preview?: ModePreview;
   isExperimental?: boolean;
   buildFilter?: (config: ModeConfigMap[T]) => string;
   defaultConfig: ModeConfigMap[T];
@@ -55,6 +62,8 @@ export const MODE_DEFINITIONS: ModeDefinition[] = [
     id: "analog",
     label: "Analog",
     description: "Soft analog grit with mild noise + clarity.",
+    engine: "ffmpeg",
+    runner: "ffmpeg",
     buildFilter: () => buildAnalogFilter(),
     defaultConfig: {},
     encode: "h264"
@@ -63,6 +72,8 @@ export const MODE_DEFINITIONS: ModeDefinition[] = [
     id: "vhs",
     label: "VHS",
     description: "Tape-style tracking noise, softness, and chroma bleed.",
+    engine: "ffmpeg",
+    runner: "ffmpeg",
     buildFilter: (config) => buildVhsFilter(config as VhsConfig),
     defaultConfig: defaultVhsConfig,
     encode: "h264"
@@ -71,6 +82,8 @@ export const MODE_DEFINITIONS: ModeDefinition[] = [
     id: "glitch",
     label: "Chroma glitch",
     description: "Digital tearing with chroma offsets and decay trails.",
+    engine: "ffmpeg",
+    runner: "ffmpeg",
     isExperimental: true,
     buildFilter: (config) => buildGlitchFilter(config as GlitchConfig),
     defaultConfig: defaultGlitchConfig,
@@ -80,6 +93,8 @@ export const MODE_DEFINITIONS: ModeDefinition[] = [
     id: "datablend",
     label: "Datablend",
     description: "Glitchy temporal blends with chroma bleed and noise.",
+    engine: "ffmpeg",
+    runner: "ffmpeg",
     isExperimental: true,
     buildFilter: (config) => buildDatablendFilter(config as DatablendConfig),
     defaultConfig: defaultDatablendConfig,
@@ -89,6 +104,9 @@ export const MODE_DEFINITIONS: ModeDefinition[] = [
     id: "pixelsort",
     label: "Pixel sort",
     description: "Per-pixel sorting for streaky glitch smears and drips.",
+    engine: "native",
+    runner: "pixelsort",
+    preview: "pixelsort",
     isExperimental: true,
     defaultConfig: defaultPixelsortConfig,
     encode: "h264"
@@ -97,6 +115,8 @@ export const MODE_DEFINITIONS: ModeDefinition[] = [
     id: "datamosh",
     label: "Datamosh (classic)",
     description: "Scene-aware I-frame removal for classic smear effects.",
+    engine: "native",
+    runner: "datamosh",
     isExperimental: true,
     defaultConfig: defaultDatamoshConfig,
     encode: "h264"
@@ -105,6 +125,8 @@ export const MODE_DEFINITIONS: ModeDefinition[] = [
     id: "copy",
     label: "Copy (no effect)",
     description: "Pass-through export with no visual processing applied.",
+    engine: "ffmpeg",
+    runner: "ffmpeg",
     defaultConfig: {},
     encode: "copy"
   }
