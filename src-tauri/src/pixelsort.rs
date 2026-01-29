@@ -19,14 +19,20 @@ pub struct PixelsortJobs(Mutex<HashMap<String, Arc<AtomicBool>>>);
 
 impl PixelsortJobs {
   pub fn register(&self, job_id: &str) -> Arc<AtomicBool> {
-    let mut lock = self.0.lock().expect("pixelsort job lock");
+    let mut lock = self
+      .0
+      .lock()
+      .unwrap_or_else(|error| error.into_inner());
     let flag = Arc::new(AtomicBool::new(false));
     lock.insert(job_id.to_string(), flag.clone());
     flag
   }
 
   pub fn cancel(&self, job_id: &str) -> bool {
-    let lock = self.0.lock().expect("pixelsort job lock");
+    let lock = self
+      .0
+      .lock()
+      .unwrap_or_else(|error| error.into_inner());
     if let Some(flag) = lock.get(job_id) {
       flag.store(true, Ordering::Relaxed);
       return true;
@@ -35,7 +41,10 @@ impl PixelsortJobs {
   }
 
   pub fn finish(&self, job_id: &str) {
-    let mut lock = self.0.lock().expect("pixelsort job lock");
+    let mut lock = self
+      .0
+      .lock()
+      .unwrap_or_else(|error| error.into_inner());
     lock.remove(job_id);
   }
 }
@@ -834,6 +843,45 @@ fn build_preview_path(tag: &str) -> PathBuf {
   std::env::temp_dir().join(file_name)
 }
 
+const MAX_PREVIEW_DIMENSION: u32 = 1280;
+
+fn resolve_preview_size(width: u32, height: u32) -> (u32, u32) {
+  let max_dim = width.max(height);
+  if max_dim <= MAX_PREVIEW_DIMENSION {
+    return (width, height);
+  }
+
+  let scale = MAX_PREVIEW_DIMENSION as f64 / max_dim as f64;
+  let scaled_width = ((width as f64) * scale).round().max(1.0) as u32;
+  let scaled_height = ((height as f64) * scale).round().max(1.0) as u32;
+  (scaled_width, scaled_height)
+}
+
+// Simple nearest-neighbor resize for preview buffers.
+fn downscale_rgba_nearest(
+  src: &[u8],
+  src_width: u32,
+  src_height: u32,
+  dst_width: u32,
+  dst_height: u32
+) -> Vec<u8> {
+  if src_width == dst_width && src_height == dst_height {
+    return src.to_vec();
+  }
+
+  let mut dst = vec![0u8; (dst_width as usize) * (dst_height as usize) * 4];
+  for y in 0..dst_height {
+    let src_y = (y as u64 * src_height as u64 / dst_height as u64) as u32;
+    for x in 0..dst_width {
+      let src_x = (x as u64 * src_width as u64 / dst_width as u64) as u32;
+      let src_idx = ((src_y * src_width + src_x) * 4) as usize;
+      let dst_idx = ((y * dst_width + x) * 4) as usize;
+      dst[dst_idx..dst_idx + 4].copy_from_slice(&src[src_idx..src_idx + 4]);
+    }
+  }
+  dst
+}
+
 fn build_preview_raw_path(tag: &str) -> PathBuf {
   let safe_tag = tag.replace(|c: char| !c.is_ascii_alphanumeric(), "_");
   let nonce = SystemTime::now()
@@ -1255,10 +1303,19 @@ pub async fn pixelsort_preview(
   let frame = decode_preview_frame(&app, &input_path, time_seconds, safe_width, safe_height)
     .await?;
   let mut workspace = FrameWorkspace::new(safe_width as usize, safe_height as usize);
-  let processed = pixelsort_frame(&frame, &mut workspace, &config, 0).to_vec();
+  let processed = pixelsort_frame(&frame, &mut workspace, &config, 0);
+  let (preview_width, preview_height) = resolve_preview_size(safe_width, safe_height);
+  let preview_frame = downscale_rgba_nearest(
+    processed,
+    safe_width,
+    safe_height,
+    preview_width,
+    preview_height
+  );
 
   let preview_path = build_preview_path("manual");
-  encode_preview_frame(&app, &processed, safe_width, safe_height, &preview_path).await?;
+  encode_preview_frame(&app, &preview_frame, preview_width, preview_height, &preview_path)
+    .await?;
 
   Ok(PixelsortPreviewResponse {
     path: preview_path.to_string_lossy().into_owned()
@@ -1348,6 +1405,8 @@ pub async fn pixelsort_process(
   let mut read_offset = 0usize;
   let mut workspace = FrameWorkspace::new(safe_width as usize, safe_height as usize);
   let mut processed_frames = 0u64;
+  let mut decode_exit_code: Option<i32> = None;
+  let mut decode_errors: Vec<String> = Vec::new();
   let mut last_progress = Instant::now();
   let start_time = Instant::now();
   let preview_path = preview_enabled.then(|| build_preview_path(&job_id));
@@ -1454,7 +1513,15 @@ pub async fn pixelsort_process(
             {
               last_preview_frame = processed_frames;
               preview_inflight.store(true, Ordering::Relaxed);
-              let preview_frame = processed.to_vec();
+              let (preview_width, preview_height) =
+                resolve_preview_size(safe_width, safe_height);
+              let preview_frame = downscale_rgba_nearest(
+                processed,
+                safe_width,
+                safe_height,
+                preview_width,
+                preview_height
+              );
               let preview_path = preview_path.clone();
               let preview_window = window.clone();
               let preview_job_id = job_id.clone();
@@ -1465,8 +1532,8 @@ pub async fn pixelsort_process(
                 let result = encode_preview_frame(
                   &preview_app,
                   &preview_frame,
-                  safe_width,
-                  safe_height,
+                  preview_width,
+                  preview_height,
                   &preview_path
                 )
                 .await;
@@ -1487,17 +1554,40 @@ pub async fn pixelsort_process(
       CommandEvent::Stderr(line) => {
         let message = String::from_utf8_lossy(&line).trim().to_string();
         if !message.is_empty() {
+          decode_errors.push(message.clone());
           emit_log(&window, &job_id, format!("decode: {message}"));
         }
       }
       CommandEvent::Error(error) => {
+        decode_errors.push(format!("decode error: {error}"));
         emit_log(&window, &job_id, format!("decode error: {error}"));
       }
-      CommandEvent::Terminated(_) => {
+      CommandEvent::Terminated(payload) => {
+        decode_exit_code = payload.code;
         break;
       }
       _ => {}
     }
+  }
+
+  if decode_exit_code.unwrap_or(-1) != 0 {
+    let message = if decode_errors.is_empty() {
+      format!(
+        "Decoder failed with exit code {}",
+        decode_exit_code.unwrap_or(-1)
+      )
+    } else {
+      decode_errors.join("\n")
+    };
+    let _ = encode_child.kill();
+    let _ = encode_rx_task.await;
+    cleanup_file(&temp_video);
+    cleanup_file(&output_path_buf);
+    if let Some(preview_path) = preview_path.as_ref() {
+      cleanup_file(preview_path);
+    }
+    state.finish(&job_id);
+    return Err(message);
   }
 
   emit_progress_update(processed_frames);

@@ -1,6 +1,7 @@
 mod datamosh;
 mod ffmpeg;
 mod ffmpeg_jobs;
+mod ffprobe_frames;
 mod pixelsort;
 
 use std::path::{Path, PathBuf};
@@ -27,40 +28,44 @@ fn datamosh_bitstream(
 }
 
 #[tauri::command]
-fn cleanup_files(paths: Vec<String>) -> Result<(), String> {
-  let mut failures = Vec::new();
-  for path in paths {
-    if path.trim().is_empty() {
-      continue;
-    }
-    let mut removed = false;
-    for _ in 0..6 {
-      match std::fs::remove_file(&path) {
-        Ok(_) => {
-          removed = true;
-          break;
-        }
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-          removed = true;
-          break;
-        }
-        Err(_) => {
-          std::thread::sleep(std::time::Duration::from_millis(120));
+async fn cleanup_files(paths: Vec<String>) -> Result<(), String> {
+  tauri::async_runtime::spawn_blocking(move || {
+    let mut failures = Vec::new();
+    for path in paths {
+      if path.trim().is_empty() {
+        continue;
+      }
+      let mut removed = false;
+      for _ in 0..6 {
+        match std::fs::remove_file(&path) {
+          Ok(_) => {
+            removed = true;
+            break;
+          }
+          Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            removed = true;
+            break;
+          }
+          Err(_) => {
+            std::thread::sleep(std::time::Duration::from_millis(120));
+          }
         }
       }
+      if !removed {
+        failures.push(path);
+      }
     }
-    if !removed {
-      failures.push(path);
+    if failures.is_empty() {
+      Ok(())
+    } else {
+      Err(format!(
+        "Failed to delete temp files: {}",
+        failures.join(", ")
+      ))
     }
-  }
-  if failures.is_empty() {
-    Ok(())
-  } else {
-    Err(format!(
-      "Failed to delete temp files: {}",
-      failures.join(", ")
-    ))
-  }
+  })
+  .await
+  .map_err(|error| format!("cleanup join failed: {error}"))?
 }
 
 #[tauri::command]
@@ -103,15 +108,19 @@ fn reveal_in_folder(path: String) -> Result<(), String> {
     return Err("Path does not exist.".to_string());
   }
   let is_dir = path_buf.is_dir();
+  let folder = if is_dir {
+    path_buf.clone()
+  } else {
+    path_buf
+      .parent()
+      .map(Path::to_path_buf)
+      .ok_or_else(|| "Path has no parent directory.".to_string())?
+  };
 
   #[cfg(windows)]
   {
     let mut command = std::process::Command::new("explorer");
-    if is_dir {
-      command.arg(&path_buf);
-    } else {
-      command.arg(format!("/select,{}", path_buf.display()));
-    }
+    command.arg(&folder);
     let status = command
       .status()
       .map_err(|error| format!("Failed to open Explorer: {error}"))?;
@@ -124,11 +133,7 @@ fn reveal_in_folder(path: String) -> Result<(), String> {
   #[cfg(target_os = "macos")]
   {
     let mut command = std::process::Command::new("open");
-    if is_dir {
-      command.arg(&path_buf);
-    } else {
-      command.arg("-R").arg(&path_buf);
-    }
+    command.arg(&folder);
     let status = command
       .status()
       .map_err(|error| format!("Failed to open Finder: {error}"))?;
@@ -140,14 +145,6 @@ fn reveal_in_folder(path: String) -> Result<(), String> {
 
   #[cfg(all(unix, not(target_os = "macos")))]
   {
-    let folder = if is_dir {
-      path_buf.clone()
-    } else {
-      path_buf
-        .parent()
-        .map(Path::to_path_buf)
-        .unwrap_or_else(|| PathBuf::from("."))
-    };
     let status = std::process::Command::new("xdg-open")
       .arg(&folder)
       .status()
@@ -157,6 +154,20 @@ fn reveal_in_folder(path: String) -> Result<(), String> {
     }
     return Err("File manager failed to open the folder.".to_string());
   }
+}
+
+#[tauri::command]
+fn file_size(path: String) -> Result<u64, String> {
+  let trimmed = path.trim();
+  if trimmed.is_empty() {
+    return Err("Path is empty.".to_string());
+  }
+  let metadata =
+    std::fs::metadata(trimmed).map_err(|error| format!("metadata: {error}"))?;
+  if !metadata.is_file() {
+    return Err("Path is not a file.".to_string());
+  }
+  Ok(metadata.len())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -171,11 +182,13 @@ pub fn run() {
       ffmpeg_jobs::ffmpeg_execute,
       ffmpeg_jobs::ffmpeg_spawn,
       ffmpeg_jobs::ffmpeg_kill,
+      ffprobe_frames::ffprobe_frame_map,
       cleanup_files,
       get_executable_dir,
       executable_file_exists,
       path_exists,
       reveal_in_folder,
+      file_size,
       pixelsort::pixelsort_process,
       pixelsort::pixelsort_cancel,
       pixelsort::pixelsort_preview

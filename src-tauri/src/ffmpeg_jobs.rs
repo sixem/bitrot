@@ -102,6 +102,12 @@ pub async fn ffmpeg_spawn(
   if job_id.is_empty() {
     return Err("ffmpeg job id is required.".to_string());
   }
+  {
+    let lock = state.0.lock().map_err(|_| "ffmpeg job lock poisoned")?;
+    if lock.contains_key(&job_id) {
+      return Err("ffmpeg job id already exists.".to_string());
+    }
+  }
 
   let resolved = resolve_ffmpeg_command_with_source(&app, &program)?;
   let (mut rx, child) = resolved
@@ -112,6 +118,10 @@ pub async fn ffmpeg_spawn(
 
   {
     let mut lock = state.0.lock().map_err(|_| "ffmpeg job lock poisoned")?;
+    if lock.contains_key(&job_id) {
+      let _ = child.kill();
+      return Err("ffmpeg job id already exists.".to_string());
+    }
     lock.insert(job_id.clone(), child);
   }
 
@@ -154,7 +164,9 @@ pub async fn ffmpeg_spawn(
         _ => {}
       }
     }
-    let mut lock = jobs.lock().expect("ffmpeg job lock");
+    let mut lock = jobs
+      .lock()
+      .unwrap_or_else(|error| error.into_inner());
     lock.remove(&emit_job_id);
   });
 
