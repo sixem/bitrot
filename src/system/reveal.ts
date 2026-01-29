@@ -3,7 +3,7 @@ import makeDebug from "@/utils/debug";
 
 const debug = makeDebug("system:reveal");
 
-// Reveals a file inside the OS file manager (selects it where supported).
+// Opens the containing folder in the OS file manager.
 export const revealInFolder = async (path: string) => {
   const trimmed = path.trim();
   if (!trimmed) {

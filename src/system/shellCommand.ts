@@ -21,8 +21,10 @@ export type CommandStream = {
 export type CommandHandle = {
   stdout: CommandStream;
   stderr: CommandStream;
-  on: (event: "close", handler: CloseHandler) => void;
-  on: (event: "error", handler: ErrorHandler) => void;
+  on: {
+    (event: "close", handler: CloseHandler): void;
+    (event: "error", handler: ErrorHandler): void;
+  };
 };
 
 type CommandBinder = (command: CommandHandle, source: CommandSource) => void;
@@ -83,6 +85,14 @@ const createCommand = (): CommandEmitter => {
   const closeListeners: CloseHandler[] = [];
   const errorListeners: ErrorHandler[] = [];
 
+  const on: CommandHandle["on"] = (event, handler) => {
+    if (event === "close") {
+      closeListeners.push(handler as CloseHandler);
+    } else {
+      errorListeners.push(handler as ErrorHandler);
+    }
+  };
+
   return {
     stdout: {
       on: stdout.on
@@ -90,13 +100,7 @@ const createCommand = (): CommandEmitter => {
     stderr: {
       on: stderr.on
     },
-    on: (event: "close" | "error", handler: CloseHandler | ErrorHandler) => {
-      if (event === "close") {
-        closeListeners.push(handler as CloseHandler);
-      } else {
-        errorListeners.push(handler as ErrorHandler);
-      }
-    },
+    on,
     emitClose: (payload: { code: number | null; signal: number | null }) => {
       for (const handler of closeListeners) {
         handler(payload);
