@@ -14,12 +14,17 @@ const initialState: FrameMapState = {
 };
 
 // Loads per-frame timestamps for VFR footage so timeline controls stay accurate.
-const useFrameMap = (asset: VideoAsset | null, isEnabled: boolean) => {
+const useFrameMap = (
+  asset: VideoAsset | null,
+  isEnabled: boolean,
+  requestId: number
+) => {
   const [state, setState] = useState<FrameMapState>(initialState);
   const assetPath = asset?.path ?? "";
 
   useEffect(() => {
-    if (!asset || !isEnabled) {
+    const shouldLoad = isEnabled && requestId > 0;
+    if (!asset || !shouldLoad) {
       setState(initialState);
       return;
     }
@@ -53,7 +58,7 @@ const useFrameMap = (asset: VideoAsset | null, isEnabled: boolean) => {
     return () => {
       isMounted = false;
     };
-  }, [asset, assetPath, isEnabled]);
+  }, [asset, assetPath, isEnabled, requestId]);
 
   return state;
 };

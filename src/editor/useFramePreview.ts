@@ -4,7 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import type { VideoAsset } from "@/domain/video";
 import type { VideoMetadata } from "@/system/ffprobe";
 import type { TrimSelectionState } from "@/editor/useTrimSelection";
-import type { ModeConfigMap, ModeId } from "@/modes/definitions";
+import { getModeDefinition, type ModeConfigMap, type ModeId } from "@/modes/definitions";
 import type { PixelsortConfig } from "@/modes/pixelsort";
 import makeDebug from "@/utils/debug";
 
@@ -48,10 +48,10 @@ type PixelsortPreviewResponse = {
 
 const debug = makeDebug("preview:frame");
 
-// Hook that owns on-demand and live preview frames for non-ffmpeg modes.
+// Hook that owns on-demand and live preview frames for native preview modes.
 
-const isPixelsortMode = (modeId: ModeId): modeId is "pixelsort" =>
-  modeId === "pixelsort";
+const supportsPixelsortPreview = (modeId: ModeId) =>
+  getModeDefinition(modeId).preview === "pixelsort";
 
 const buildPreviewUrl = (path: string) =>
   `${convertFileSrc(path)}?v=${Date.now()}`;
@@ -65,7 +65,7 @@ const useFramePreview = ({
   isProcessing,
   trim
 }: FramePreviewOptions): FramePreviewControl => {
-  const isSupported = isPixelsortMode(modeId);
+  const isSupported = supportsPixelsortPreview(modeId);
   const [manualPreview, setManualPreview] = useState<PreviewState>({
     isActive: false,
     isLoading: false

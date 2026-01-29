@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { VideoAsset } from "@/domain/video";
 import useGlobalVideoDrop from "@/hooks/useGlobalVideoDrop";
 import formatBytes from "@/utils/formatBytes";
@@ -21,6 +21,7 @@ import useEditorTopRowHeight from "@/editor/useEditorTopRowHeight";
 import useTrimSelection from "@/editor/useTrimSelection";
 import {
   createModeConfigs,
+  getModeDefinition,
   type ModeConfigMap,
   type ModeId
 } from "@/modes/definitions";
@@ -46,6 +47,8 @@ const Editor = ({ asset, onReplace }: EditorProps) => {
     encodingId: EncodingId;
   } | null>(null);
   const [modeId, setModeId] = useState<ModeId>("analog");
+  const activeMode = getModeDefinition(modeId);
+  const [frameMapRequestId, setFrameMapRequestId] = useState(0);
   const lastAssetPathRef = useRef(asset.path);
   const metadataDurationSeconds =
     typeof metadataState.metadata?.durationSeconds === "number" &&
@@ -90,7 +93,7 @@ const Editor = ({ asset, onReplace }: EditorProps) => {
       ? metadataState.metadata.fps
       : undefined;
   const metadataIsVfr = metadataState.metadata?.isVfr ?? false;
-  const frameMapState = useFrameMap(asset, metadataIsVfr);
+  const frameMapState = useFrameMap(asset, metadataIsVfr, frameMapRequestId);
   const trimEnabled = trimSelection.selection.enabled && trimSelection.selection.isValid;
   const trimStartSeconds =
     trimEnabled && typeof trimSelection.selection.start === "number"
@@ -106,7 +109,7 @@ const Editor = ({ asset, onReplace }: EditorProps) => {
       : metadataDurationSeconds;
   const defaultOutputPath = buildDefaultOutputPath(
     asset.path,
-    modeId === "copy" ? undefined : "mp4"
+    activeMode.encode === "copy" ? undefined : "mp4"
   );
   const [exportSettings, setExportSettings] = useState<ExportSettings>(() =>
     splitOutputPath(defaultOutputPath)
@@ -182,6 +185,20 @@ const Editor = ({ asset, onReplace }: EditorProps) => {
   });
 
   useEffect(() => {
+    setFrameMapRequestId(0);
+  }, [asset.path]);
+
+  useEffect(() => {
+    if (!metadataIsVfr) {
+      setFrameMapRequestId(0);
+    }
+  }, [metadataIsVfr]);
+
+  const handleFrameMapRequest = useCallback(() => {
+    setFrameMapRequestId((prev) => prev + 1);
+  }, []);
+
+  useEffect(() => {
     setExportSettings((prev) => ({
       ...splitOutputPath(defaultOutputPath),
       // Preserve the user's encoding selection when the mode changes.
@@ -241,7 +258,8 @@ const Editor = ({ asset, onReplace }: EditorProps) => {
       modeConfigs[modeId],
       encodingId,
       trimStartSeconds,
-      trimEndSeconds
+      trimEndSeconds,
+      metadataState.metadata
     );
   };
 
@@ -287,14 +305,15 @@ const Editor = ({ asset, onReplace }: EditorProps) => {
               fallbackDuration={metadataState.metadata?.durationSeconds}
               fps={metadataFps}
               isVfr={metadataIsVfr}
-              isCopyMode={modeId === "copy"}
-              frameMap={frameMapState.frameMap}
-              frameMapStatus={frameMapState.status}
-              frameMapError={frameMapState.error}
-              preview={previewControl}
-              renderTimeSeconds={renderTimeSeconds}
-              trim={trimSelection}
-            />
+            isCopyMode={activeMode.encode === "copy"}
+            frameMap={frameMapState.frameMap}
+            frameMapStatus={frameMapState.status}
+            frameMapError={frameMapState.error}
+            onRequestFrameMap={handleFrameMapRequest}
+            preview={previewControl}
+            renderTimeSeconds={renderTimeSeconds}
+            trim={trimSelection}
+          />
           </article>
         </div>
 
@@ -518,6 +537,7 @@ const Editor = ({ asset, onReplace }: EditorProps) => {
       <ReceiptModal
         isOpen={!!receipt}
         outputPath={receipt?.outputPath ?? ""}
+        inputSizeBytes={metadataSizeBytes}
         modeId={receipt?.modeId ?? modeId}
         encodingId={receipt?.encodingId ?? exportSettings.encodingId}
         onClose={() => setReceipt(null)}

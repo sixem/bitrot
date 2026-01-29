@@ -1,10 +1,11 @@
 ﻿import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent } from "react";
 import type { VideoAsset } from "@/domain/video";
-import type { FrameEntry, FrameMap } from "@/analysis/frameMap";
+import type { FrameMap } from "@/analysis/frameMap";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import formatDuration from "@/utils/formatDuration";
 import type { FramePreviewControl } from "@/editor/useFramePreview";
 import type { TrimSelectionState } from "@/editor/useTrimSelection";
+import { BookmarkIcon, ClearIcon } from "@/ui/icons";
 
 type VideoPreviewProps = {
   asset: VideoAsset;
@@ -15,6 +16,7 @@ type VideoPreviewProps = {
   frameMap?: FrameMap;
   frameMapStatus?: "idle" | "loading" | "ready" | "error";
   frameMapError?: string;
+  onRequestFrameMap?: () => void;
   preview?: FramePreviewControl;
   renderTimeSeconds?: number;
   trim?: TrimControl;
@@ -53,16 +55,23 @@ const clampTime = (time: number, duration?: number) => {
   return Math.min(Math.max(time, 0), Math.max(0, duration ?? 0));
 };
 
+const formatDurationSafe = (value?: number) =>
+  typeof value === "number" && Number.isFinite(value) ? formatDuration(value) : "--";
+
 const MIN_SCRUB_STEP_SECONDS = 0.001;
 const TRIM_TRACK_BASE_COLOR = "#131313";
+// Playback cadence for arrow-key holds.
+const HOLD_PLAYBACK_RATE = 1.0;
+// Reverse has to be simulated, so step once per second for consistency.
+const REVERSE_STEP_INTERVAL_MS = 1000;
 
-const findNearestFrameIndex = (frames: FrameEntry[], timeSeconds: number) => {
+const findNearestFrameIndex = (frames: ArrayLike<number>, timeSeconds: number) => {
   let low = 0;
   let high = frames.length - 1;
 
   while (low <= high) {
     const mid = (low + high) >> 1;
-    const midTime = frames[mid].timeSeconds;
+    const midTime = frames[mid];
     if (midTime < timeSeconds) {
       low = mid + 1;
     } else {
@@ -77,20 +86,20 @@ const findNearestFrameIndex = (frames: FrameEntry[], timeSeconds: number) => {
     return frames.length - 1;
   }
 
-  const before = frames[low - 1].timeSeconds;
-  const after = frames[low].timeSeconds;
+  const before = frames[low - 1];
+  const after = frames[low];
   return timeSeconds - before <= after - timeSeconds ? low - 1 : low;
 };
 
 // Pick the smallest positive frame delta to keep scrubbing granular for VFR clips.
-const getMinFrameStep = (frames: FrameEntry[] | null) => {
+const getMinFrameStep = (frames: ArrayLike<number> | null) => {
   if (!frames || frames.length < 2) {
     return undefined;
   }
 
   let minDelta = Number.POSITIVE_INFINITY;
   for (let index = 1; index < frames.length; index += 1) {
-    const delta = frames[index].timeSeconds - frames[index - 1].timeSeconds;
+    const delta = frames[index] - frames[index - 1];
     if (delta > 0 && delta < minDelta) {
       minDelta = delta;
     }
@@ -127,8 +136,11 @@ const getVfrWarningMessage = (
   if (!isVfr || hasFrameMap) {
     return null;
   }
-  if (status === "loading" || status === "idle") {
+  if (status === "loading") {
     return "Variable FPS detected. Loading a frame map for accurate controls...";
+  }
+  if (status === "idle") {
+    return "Variable FPS detected. Load a frame map for accurate controls.";
   }
   if (status === "error") {
     return errorLabel
@@ -148,11 +160,18 @@ const VideoPreview = ({
   frameMap,
   frameMapStatus = "idle",
   frameMapError,
+  onRequestFrameMap,
   preview,
   renderTimeSeconds,
   trim
 }: VideoPreviewProps) => {
   const videoRef = useRef<HTMLVideoElement>(null);
+  // Track arrow-key hold state for tap-vs-hold behavior.
+  const holdKeyRef = useRef<"ArrowLeft" | "ArrowRight" | null>(null);
+  const holdActiveRef = useRef(false);
+  const reverseIntervalRef = useRef<number | null>(null);
+  const holdPlaybackRef = useRef<{ playbackRate: number } | null>(null);
+  const lastMarkEdgeRef = useRef<"start" | "end">("end");
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState<number | undefined>(undefined);
   const [isReady, setIsReady] = useState(false);
@@ -160,6 +179,30 @@ const VideoPreview = ({
   const [error, setError] = useState<string | null>(null);
   const [volume, setVolume] = useState(0.2);
   const [skipSeconds, setSkipSeconds] = useState(5);
+
+  const stopHoldPlayback = useCallback(() => {
+    if (!holdActiveRef.current && reverseIntervalRef.current === null) {
+      return;
+    }
+    if (reverseIntervalRef.current !== null) {
+      window.clearInterval(reverseIntervalRef.current);
+      reverseIntervalRef.current = null;
+    }
+    const video = videoRef.current;
+    const restore = holdPlaybackRef.current;
+    if (video) {
+      if (restore) {
+        video.playbackRate = restore.playbackRate;
+      }
+      // Hold playback should always stop when the key is released.
+      video.pause();
+      setCurrentTime(video.currentTime);
+      setIsPlaying(!video.paused);
+    }
+    holdPlaybackRef.current = null;
+    holdActiveRef.current = false;
+    holdKeyRef.current = null;
+  }, []);
 
   const sourcePath = sanitizePath(asset.path);
   const sourceUrl = useMemo(
@@ -176,8 +219,9 @@ const VideoPreview = ({
     typeof fps === "number" && Number.isFinite(fps) && fps > 0 ? fps : undefined;
   const resolvedFps = !isVfr ? nominalFps : undefined;
   const frameDurationSeconds = resolvedFps ? 1 / resolvedFps : undefined;
-  const frameMapFrames = frameMap?.frames ?? null;
+  const frameMapFrames = frameMap?.times ?? null;
   const hasFrameMap = !!frameMapFrames && frameMapFrames.length > 0;
+  const canRequestFrameMap = isVfr && !hasFrameMap && !!onRequestFrameMap;
   const frameMapErrorLabel = frameMapError?.split("\n")[0]?.trim();
   const frameMapStep = useMemo(() => getMinFrameStep(frameMapFrames), [frameMapFrames]);
   const vfrWarningMessage = useMemo(
@@ -185,9 +229,15 @@ const VideoPreview = ({
     [frameMapErrorLabel, frameMapStatus, hasFrameMap, isVfr]
   );
   const showVfrWarning = Boolean(vfrWarningMessage);
+  const showFrameMapAction =
+    canRequestFrameMap &&
+    (frameMapStatus === "idle" || frameMapStatus === "error");
+  const frameMapActionLabel =
+    frameMapStatus === "error" ? "Retry frame map" : "Load frame map";
 
   // Reset playback state when the source changes.
   useEffect(() => {
+    stopHoldPlayback();
     const video = videoRef.current;
     if (video) {
       video.pause();
@@ -198,7 +248,7 @@ const VideoPreview = ({
     setIsReady(false);
     setIsPlaying(false);
     setError(null);
-  }, [sourceUrl]);
+  }, [sourceUrl, stopHoldPlayback]);
 
   // Keep the element in sync with the current volume value.
   useEffect(() => {
@@ -280,10 +330,16 @@ const VideoPreview = ({
   };
 
   const handlePlay = () => {
+    if (holdActiveRef.current) {
+      return;
+    }
     setIsPlaying(true);
   };
 
   const handlePause = () => {
+    if (holdActiveRef.current) {
+      return;
+    }
     setIsPlaying(false);
   };
 
@@ -304,12 +360,12 @@ const VideoPreview = ({
     setCurrentTime(clamped);
   }, [preview?.isProcessing, renderTimeSeconds, resolvedDuration]);
 
-  const scrubValue = Number.isFinite(resolvedDuration)
+  const scrubValue = typeof resolvedDuration === "number"
     ? clampTime(currentTime, resolvedDuration)
     : 0;
   const totalFrames = hasFrameMap
     ? frameMapFrames?.length
-    : resolvedFps && Number.isFinite(resolvedDuration)
+    : resolvedFps !== undefined && typeof resolvedDuration === "number"
       ? Math.max(1, Math.round(resolvedDuration * resolvedFps))
       : undefined;
   const maxFrameIndex = totalFrames ? Math.max(0, totalFrames - 1) : undefined;
@@ -344,7 +400,7 @@ const VideoPreview = ({
       }
       if (frameMapFrames && frameMapFrames.length > 0) {
         const clamped = clampFrameIndex(frame);
-        return frameMapFrames[clamped]?.timeSeconds;
+        return frameMapFrames[clamped];
       }
       if (!frameDurationSeconds) {
         return undefined;
@@ -408,30 +464,31 @@ const VideoPreview = ({
     return `${base} + f${frame}`;
   };
   const trimTrack = useMemo(() => {
-    if (!resolvedDuration) {
+    if (typeof resolvedDuration !== "number") {
       return undefined;
     }
+    const durationSeconds = resolvedDuration;
     const start =
       typeof trimSelection?.start === "number"
-        ? clampTime(trimSelection.start, resolvedDuration)
+        ? clampTime(trimSelection.start, durationSeconds)
         : undefined;
     const end =
       typeof trimSelection?.end === "number"
-        ? clampTime(trimSelection.end, resolvedDuration)
+        ? clampTime(trimSelection.end, durationSeconds)
         : undefined;
     const highlight = trimEnabled
       ? "rgba(123, 255, 168, 0.45)"
       : "rgba(120, 220, 255, 0.25)";
     if (start !== undefined && end !== undefined && end > start) {
-      const startPct = (start / resolvedDuration) * 100;
-      const endPct = (end / resolvedDuration) * 100;
+      const startPct = (start / durationSeconds) * 100;
+      const endPct = (end / durationSeconds) * 100;
       return buildTrimGradient(startPct, endPct, highlight);
     }
     const marker = start ?? end;
     if (marker === undefined) {
       return undefined;
     }
-    const markerPct = (marker / resolvedDuration) * 100;
+    const markerPct = (marker / durationSeconds) * 100;
     const markerWidth = 0.45;
     const minPct = Math.max(0, markerPct - markerWidth);
     const maxPct = Math.min(100, markerPct + markerWidth);
@@ -448,6 +505,13 @@ const VideoPreview = ({
     }
     preview.onRequest(currentTime);
   };
+
+  const handleRequestFrameMap = useCallback(() => {
+    if (!onRequestFrameMap) {
+      return;
+    }
+    onRequestFrameMap();
+  }, [onRequestFrameMap]);
 
   // Snap to the closest frame boundary using per-frame timestamps when available.
   const snapToFrame = useCallback(
@@ -511,12 +575,161 @@ const VideoPreview = ({
     [clampFrameIndex, resolveFrameIndex, resolveTimeForFrame, trim]
   );
 
+  // Single "Mark" button: set start/end or adjust the nearest edge.
+  const handleMark = useCallback(() => {
+    if (!trim) {
+      return;
+    }
+    const markTime = snapToFrame(currentTime);
+    const start = trim.selection.start;
+    const end = trim.selection.end;
+    const hasStart = typeof start === "number";
+    const hasEnd = typeof end === "number";
+
+    if (!hasStart && !hasEnd) {
+      trim.markIn(markTime);
+      lastMarkEdgeRef.current = "start";
+      return;
+    }
+    if (hasStart && !hasEnd) {
+      const startTime = start as number;
+      if (markTime < startTime) {
+        trim.markOut(startTime);
+        trim.markIn(markTime);
+        lastMarkEdgeRef.current = "start";
+        return;
+      }
+      trim.markOut(markTime);
+      lastMarkEdgeRef.current = "end";
+      return;
+    }
+    if (!hasStart && hasEnd) {
+      const endTime = end as number;
+      if (markTime > endTime) {
+        trim.markIn(endTime);
+        trim.markOut(markTime);
+        lastMarkEdgeRef.current = "end";
+        return;
+      }
+      trim.markIn(markTime);
+      lastMarkEdgeRef.current = "start";
+      return;
+    }
+
+    const startTime = start as number;
+    const endTime = end as number;
+    if (markTime < startTime) {
+      trim.markIn(markTime);
+      lastMarkEdgeRef.current = "start";
+      return;
+    }
+    if (markTime > endTime) {
+      trim.markOut(markTime);
+      lastMarkEdgeRef.current = "end";
+      return;
+    }
+
+    const distToStart = Math.abs(markTime - startTime);
+    const distToEnd = Math.abs(markTime - endTime);
+    if (distToStart < distToEnd) {
+      trim.markIn(markTime);
+      lastMarkEdgeRef.current = "start";
+      return;
+    }
+    if (distToEnd < distToStart) {
+      trim.markOut(markTime);
+      lastMarkEdgeRef.current = "end";
+      return;
+    }
+
+    if (lastMarkEdgeRef.current === "start") {
+      trim.markOut(markTime);
+      lastMarkEdgeRef.current = "end";
+      return;
+    }
+    trim.markIn(markTime);
+    lastMarkEdgeRef.current = "start";
+  }, [currentTime, snapToFrame, trim]);
+
+  const startHoldPlayback = useCallback(
+    (direction: "forward" | "reverse") => {
+      const video = videoRef.current;
+      if (!video || controlsDisabled || !sourceUrl) {
+        return;
+      }
+      if (holdActiveRef.current) {
+        return;
+      }
+      if (direction === "reverse" && !hasFrameMap && !frameDurationSeconds) {
+        if (canRequestFrameMap) {
+          handleRequestFrameMap();
+        }
+        return;
+      }
+      holdActiveRef.current = true;
+      holdPlaybackRef.current = { playbackRate: video.playbackRate };
+      if (direction === "forward") {
+        video.playbackRate = HOLD_PLAYBACK_RATE;
+        void video.play();
+        return;
+      }
+      if (!video.paused) {
+        video.pause();
+      }
+      reverseIntervalRef.current = window.setInterval(() => {
+        seekByFrames(-1);
+      }, REVERSE_STEP_INTERVAL_MS);
+    },
+    [
+      canRequestFrameMap,
+      controlsDisabled,
+      frameDurationSeconds,
+      handleRequestFrameMap,
+      hasFrameMap,
+      seekByFrames,
+      sourceUrl
+    ]
+  );
+
+  useEffect(() => {
+    const handleBlur = () => {
+      if (holdActiveRef.current) {
+        stopHoldPlayback();
+      }
+    };
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        if (holdActiveRef.current) {
+          stopHoldPlayback();
+        }
+      }
+    };
+    const handlePointerDown = () => {
+      if (holdActiveRef.current) {
+        stopHoldPlayback();
+      }
+    };
+    const handleFocusIn = () => {
+      if (holdActiveRef.current) {
+        stopHoldPlayback();
+      }
+    };
+    window.addEventListener("blur", handleBlur);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("pointerdown", handlePointerDown, true);
+    window.addEventListener("focusin", handleFocusIn, true);
+    return () => {
+      window.removeEventListener("blur", handleBlur);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("pointerdown", handlePointerDown, true);
+      window.removeEventListener("focusin", handleFocusIn, true);
+    };
+  }, [stopHoldPlayback]);
+
   // Frame-accurate keyboard nudges for the playhead and trim markers.
   useEffect(() => {
     const canNudgeFrames = hasFrameMap || !!frameDurationSeconds;
-    if (!canNudgeFrames) {
-      return;
-    }
+    const canPromptFrameMap = canRequestFrameMap;
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented || controlsDisabled || !sourceUrl) {
@@ -535,62 +748,87 @@ const VideoPreview = ({
       const delta = event.key === "ArrowRight" ? 1 : -1;
       if (event.shiftKey && trim) {
         event.preventDefault();
+        if (!canNudgeFrames && canPromptFrameMap) {
+          handleRequestFrameMap();
+          return;
+        }
         nudgeTrimBoundary("start", delta);
         return;
       }
       if (event.altKey && trim) {
         event.preventDefault();
+        if (!canNudgeFrames && canPromptFrameMap) {
+          handleRequestFrameMap();
+          return;
+        }
         nudgeTrimBoundary("end", delta);
         return;
       }
 
       event.preventDefault();
+      if (event.repeat) {
+        // Use OS repeat delay as the "hold" threshold for continuous playback.
+        if (!holdActiveRef.current) {
+          if (delta > 0 || canNudgeFrames) {
+            startHoldPlayback(delta > 0 ? "forward" : "reverse");
+          } else if (canPromptFrameMap) {
+            handleRequestFrameMap();
+          }
+        }
+        return;
+      }
+      if (!canNudgeFrames) {
+        if (canPromptFrameMap) {
+          handleRequestFrameMap();
+        }
+        return;
+      }
+      if (!holdKeyRef.current) {
+        holdKeyRef.current = event.key;
+      }
       seekByFrames(delta);
     };
 
+    const handleKeyUp = (event: KeyboardEvent) => {
+      if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") {
+        return;
+      }
+      if (event.metaKey || event.ctrlKey) {
+        return;
+      }
+      if (isEditableTarget(event.target)) {
+        return;
+      }
+      if (holdKeyRef.current && holdKeyRef.current !== event.key) {
+        return;
+      }
+      event.preventDefault();
+
+      holdKeyRef.current = null;
+      if (holdActiveRef.current) {
+        stopHoldPlayback();
+      }
+    };
+
     window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keyup", handleKeyUp);
     };
   }, [
+    canRequestFrameMap,
     frameDurationSeconds,
     hasFrameMap,
     controlsDisabled,
+    handleRequestFrameMap,
     nudgeTrimBoundary,
+    startHoldPlayback,
+    stopHoldPlayback,
     seekByFrames,
     sourceUrl,
     trim
   ]);
-
-  // Inline SVG icons keep toolbar buttons self-contained and theme-colored.
-  const bookmarkIcon = (
-    <svg
-      className="preview-button-icon"
-      viewBox="0 0 512 512"
-      aria-hidden="true"
-      focusable="false"
-    >
-      <path
-        fill="currentColor"
-        d="M410.9,0H85.1C72.3,0,61.8,10.4,61.8,23.3V512L248,325.8L434.2,512V23.3C434.2,10.4,423.8,0,410.9,0z"
-      />
-    </svg>
-  );
-  const clearIcon = (
-    <svg
-      className="preview-button-icon"
-      viewBox="0 0 16 16"
-      aria-hidden="true"
-      focusable="false"
-    >
-      <path
-        fillRule="evenodd"
-        clipRule="evenodd"
-        d="M0 8L6 2H16V14H6L0 8ZM6.79289 6.20711L8.58579 8L6.79289 9.79289L8.20711 11.2071L10 9.41421L11.7929 11.2071L13.2071 9.79289L11.4142 8L13.2071 6.20711L11.7929 4.79289L10 6.58579L8.20711 4.79289L6.79289 6.20711Z"
-        fill="currentColor"
-      />
-    </svg>
-  );
 
   return (
     <div className="preview-player" data-ready={isReady}>
@@ -682,29 +920,11 @@ const VideoPreview = ({
               <button
                 className="preview-button preview-button--icon"
                 type="button"
-                onClick={() => trim.markIn(snapToFrame(currentTime))}
+                onClick={handleMark}
                 disabled={!resolvedDuration || controlsDisabled}
               >
-                {bookmarkIcon}
-                <span>In</span>
-              </button>
-              <button
-                className="preview-button preview-button--icon"
-                type="button"
-                onClick={() => trim.markOut(snapToFrame(currentTime))}
-                disabled={!resolvedDuration || controlsDisabled}
-              >
-                {bookmarkIcon}
-                <span>Out</span>
-              </button>
-              <button
-                className="preview-button preview-button--ghost"
-                type="button"
-                onClick={trim.toggleEnabled}
-                data-active={trimEnabled}
-                disabled={!trimHasRange || controlsDisabled}
-              >
-                Use selection
+                <BookmarkIcon />
+                <span>Mark</span>
               </button>
               <button
                 className="preview-button preview-button--ghost preview-button--icon"
@@ -717,14 +937,23 @@ const VideoPreview = ({
                     trimSelection?.end === undefined)
                 }
               >
-                {clearIcon}
+                <ClearIcon />
+              </button>
+              <button
+                className="preview-button preview-button--ghost"
+                type="button"
+                onClick={trim.toggleEnabled}
+                data-active={trimEnabled}
+                disabled={!trimHasRange || controlsDisabled}
+              >
+                Use selection
               </button>
             </div>
           )}
           <div className="preview-time">
             <span>{formatDuration(currentTime)}</span>
             <span>/</span>
-            <span>{formatDuration(resolvedDuration)}</span>
+            <span>{formatDurationSafe(resolvedDuration)}</span>
             {clampedFrame !== undefined && totalFrames !== undefined && (
               <>
                 <span className="preview-time-separator">|</span>
@@ -736,7 +965,18 @@ const VideoPreview = ({
           </div>
         </div>
         {showVfrWarning && (
-          <div className="preview-warning">{vfrWarningMessage}</div>
+          <div className="preview-warning">
+            <span>{vfrWarningMessage}</span>
+            {showFrameMapAction && (
+              <button
+                className="preview-warning-action"
+                type="button"
+                onClick={handleRequestFrameMap}
+              >
+                {frameMapActionLabel}
+              </button>
+            )}
+          </div>
         )}
         {showCopyTrimWarning && (
           <div className="preview-warning">

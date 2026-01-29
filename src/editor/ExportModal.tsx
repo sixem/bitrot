@@ -36,6 +36,7 @@ const ExportModal = ({
     useState<EncodingPreset[]>(ENCODING_PRESETS);
   const [overwritePromptPath, setOverwritePromptPath] = useState<string | null>(null);
   const [missingFolderPath, setMissingFolderPath] = useState<string | null>(null);
+  const [pathCheckWarning, setPathCheckWarning] = useState<string | null>(null);
   const [isCheckingOverwrite, setIsCheckingOverwrite] = useState(false);
 
   useEffect(() => {
@@ -84,6 +85,7 @@ const ExportModal = ({
     }
     setOverwritePromptPath(null);
     setMissingFolderPath(null);
+    setPathCheckWarning(null);
   }, [isOpen, inputPath, settings.folder, settings.fileName, settings.separator]);
 
   if (!isOpen) {
@@ -130,6 +132,17 @@ const ExportModal = ({
       onConfirm(outputPath, settings.encodingId);
       return;
     }
+    if (pathCheckWarning) {
+      onConfirm(outputPath, settings.encodingId);
+      return;
+    }
+
+    if (pathCheckWarning) {
+      setPathCheckWarning(null);
+    }
+    if (overwritePromptPath) {
+      setOverwritePromptPath(null);
+    }
 
     setIsCheckingOverwrite(true);
     // Verify destination folder exists before checking for overwrite.
@@ -139,8 +152,13 @@ const ExportModal = ({
       return;
     }
     const folderExists = await pathExists(folderPath);
-    if (!folderExists) {
+    if (folderExists === false) {
       setMissingFolderPath(folderPath);
+      setIsCheckingOverwrite(false);
+      return;
+    }
+    if (folderExists === null) {
+      setPathCheckWarning("Unable to verify the output folder. Click Export to proceed.");
       setIsCheckingOverwrite(false);
       return;
     }
@@ -151,6 +169,10 @@ const ExportModal = ({
     const exists = await pathExists(outputPath);
     setIsCheckingOverwrite(false);
 
+    if (exists === null) {
+      setPathCheckWarning("Unable to verify whether the output exists. Click Export to proceed.");
+      return;
+    }
     if (exists) {
       setOverwritePromptPath(outputPath);
       return;
@@ -244,6 +266,9 @@ const ExportModal = ({
             <p className="export-warning">
               Output already exists. Click Overwrite to replace it.
             </p>
+          )}
+          {!outputMatchesInput && !overwritePromptPath && pathCheckWarning && (
+            <p className="export-warning">{pathCheckWarning}</p>
           )}
         </div>
         <div className="export-actions">
