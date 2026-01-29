@@ -62,9 +62,9 @@ const Landing = ({ isReady, onVideoSelected }: LandingProps) => {
           <div className="details">
             <p className="details-title">What happens next</p>
             <ul>
-              <li>Pick a corruption mode and intensity.</li>
-              <li>Lock a seed so you can reproduce the glitch.</li>
-              <li>Render a preview, then export the full file.</li>
+              <li>Pick a mode and configure it to your liking.</li>
+              <li>Trim the video if required, and set encoding presets.</li>
+              <li>Render the full video.</li>
             </ul>
           </div>
         </section>
