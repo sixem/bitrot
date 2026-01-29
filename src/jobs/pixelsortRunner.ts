@@ -11,6 +11,7 @@ import {
   type EncodingId
 } from "@/jobs/encoding";
 import type { PixelsortConfig } from "@/modes/pixelsort";
+import { sanitizePath } from "@/system/path";
 import makeDebug from "@/utils/debug";
 
 type PixelsortCallbacks = {
@@ -44,8 +45,6 @@ type PixelsortLogPayload = {
 
 const debug = makeDebug("jobs:pixelsort");
 
-const sanitizePath = (value: string) => value.trim().replace(/^"+|"+$/g, "");
-
 type TrimRange = {
   start: number;
   end: number;
@@ -78,6 +77,29 @@ const createJobId = () =>
   `pixelsort-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
 
 const clampEven = (value: number) => value - (value % 2);
+
+const resolvePixelsortFps = (avgFps?: number, nominalFps?: number) => {
+  if (
+    typeof avgFps === "number" &&
+    typeof nominalFps === "number" &&
+    Number.isFinite(avgFps) &&
+    Number.isFinite(nominalFps) &&
+    nominalFps > avgFps * 1.4
+  ) {
+    return nominalFps;
+  }
+  if (typeof avgFps === "number" && Number.isFinite(avgFps) && avgFps > 0) {
+    return avgFps;
+  }
+  if (
+    typeof nominalFps === "number" &&
+    Number.isFinite(nominalFps) &&
+    nominalFps > 0
+  ) {
+    return nominalFps;
+  }
+  return 30;
+};
 
 const resolveDimensions = (width?: number, height?: number) => {
   if (!width || !height) {
@@ -174,8 +196,7 @@ export const runPixelsortJob = async (
   debug("runPixelsortJob start: input=%s output=%s", inputPath, cleanOutput);
 
   const metadata = await probeVideo(inputPath);
-  const safeFps =
-    typeof metadata.fps === "number" && metadata.fps > 0 ? metadata.fps : 30;
+  const safeFps = resolvePixelsortFps(metadata.avgFps, metadata.nominalFps);
   const trimRange = normalizeTrimRange(
     trimStartSeconds,
     trimEndSeconds,

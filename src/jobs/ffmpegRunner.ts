@@ -4,10 +4,16 @@ import { buildDefaultOutputPath, pathsMatch } from "@/jobs/output";
 import { runDatamoshJob } from "@/jobs/datamoshRunner";
 import { runPixelsortJob } from "@/jobs/pixelsortRunner";
 import {
+  SAFE_SCALE_FILTER,
+  buildAudioArgs,
+  buildContainerArgs
+} from "@/jobs/ffmpegArgs";
+import {
   spawnWithFallback,
   type CommandHandle,
   type CommandSource
 } from "@/system/shellCommand";
+import { sanitizePath } from "@/system/path";
 import {
   getModeDefinition,
   type ModeConfigMap,
@@ -29,12 +35,13 @@ import {
   getEncodingPreset,
   type EncodingId
 } from "@/jobs/encoding";
-import { probeVideo } from "@/system/ffprobe";
+import { probeVideo, type VideoMetadata } from "@/system/ffprobe";
 import makeDebug from "@/utils/debug";
 
 type FfmpegRunOptions = {
   outputPath?: string;
   durationSeconds?: number;
+  inputMetadata?: VideoMetadata;
   modeId?: ModeId;
   modeConfig?: ModeConfigMap[ModeId];
   encodingId?: EncodingId;
@@ -56,30 +63,6 @@ export type FfmpegRunHandle = {
 
 const debug = makeDebug("jobs:runner");
 
-const sanitizePath = (value: string) => value.trim().replace(/^"+|"+$/g, "");
-// libx264 requires even dimensions; we trim odd pixels safely.
-const SAFE_SCALE_FILTER = "scale=trunc(iw/2)*2:trunc(ih/2)*2,setsar=1";
-
-const getExtension = (path: string) => {
-  const clean = path.trim().toLowerCase();
-  const dotIndex = clean.lastIndexOf(".");
-  return dotIndex >= 0 ? clean.slice(dotIndex + 1) : "";
-};
-
-const buildAudioArgs = (outputPath: string) => {
-  const extension = getExtension(outputPath);
-  if (extension === "mp4" || extension === "m4v") {
-    return ["-c:a", "aac", "-b:a", "192k"];
-  }
-  return ["-c:a", "copy"];
-};
-
-const buildContainerArgs = (outputPath: string) => {
-  const extension = getExtension(outputPath);
-  return extension === "mp4" || extension === "m4v"
-    ? ["-movflags", "+faststart"]
-    : [];
-};
 
 const normalizeTrimRange = (start?: number, end?: number) => {
   if (typeof start !== "number" || typeof end !== "number") {
@@ -111,7 +94,8 @@ const buildArgs = (
   encodingId?: EncodingId,
   trimStartSeconds?: number,
   trimEndSeconds?: number,
-  bitrateCapKbps?: number
+  bitrateCapKbps?: number,
+  needsEvenDimensions = true
 ) => {
   const mode = getModeDefinition(modeId);
   const resolvedConfig = modeConfig ?? mode.defaultConfig;
@@ -135,7 +119,7 @@ const buildArgs = (
   if (mode.buildFilter) {
     filters.push(mode.buildFilter(resolvedConfig));
   }
-  if (!shouldCopy) {
+  if (!shouldCopy && needsEvenDimensions) {
     filters.push(SAFE_SCALE_FILTER);
   }
   if (filters.length > 0) {
@@ -158,21 +142,45 @@ const buildArgs = (
   return args;
 };
 
-const resolveBitrateCapKbps = async (
-  inputPath: string,
+const deriveEncodingMetadata = (
+  metadata: VideoMetadata,
   encodingId?: EncodingId
 ) => {
+  const preset = getEncodingPreset(encodingId ?? DEFAULT_ENCODING_ID);
+  const bitrateCapKbps = estimateBitrateCapKbps(
+    metadata.sizeBytes,
+    metadata.durationSeconds,
+    preset
+  );
+  const width =
+    typeof metadata.width === "number" && Number.isFinite(metadata.width)
+      ? metadata.width
+      : undefined;
+  const height =
+    typeof metadata.height === "number" && Number.isFinite(metadata.height)
+      ? metadata.height
+      : undefined;
+  const needsEvenDimensions =
+    width !== undefined && height !== undefined
+      ? width % 2 !== 0 || height % 2 !== 0
+      : true;
+  return { bitrateCapKbps, needsEvenDimensions };
+};
+
+const resolveEncodingMetadata = async (
+  inputPath: string,
+  encodingId?: EncodingId,
+  metadata?: VideoMetadata
+) => {
+  if (metadata) {
+    return deriveEncodingMetadata(metadata, encodingId);
+  }
   try {
-    const metadata = await probeVideo(inputPath);
-    const preset = getEncodingPreset(encodingId ?? DEFAULT_ENCODING_ID);
-    return estimateBitrateCapKbps(
-      metadata.sizeBytes,
-      metadata.durationSeconds,
-      preset
-    );
+    const probe = await probeVideo(inputPath);
+    return deriveEncodingMetadata(probe, encodingId);
   } catch (error) {
     debug("bitrate cap probe failed: %O", error);
-    return undefined;
+    return { bitrateCapKbps: undefined, needsEvenDimensions: true };
   }
 };
 
@@ -186,6 +194,7 @@ export const runFfmpegJob = async (
   const outputPath = sanitizePath(
     options.outputPath ?? buildDefaultOutputPath(inputPath)
   );
+  const activeMode = getModeDefinition(options.modeId);
   if (pathsMatch(inputPath, outputPath)) {
     throw new Error(
       "Output path matches the input file. Choose a different output name."
@@ -193,11 +202,11 @@ export const runFfmpegJob = async (
   }
   debug(
     "runFfmpegJob start: mode=%s input=%s output=%s",
-    options.modeId ?? "analog",
+    activeMode.id,
     inputPath,
     outputPath
   );
-  if (options.modeId === "datamosh") {
+  if (activeMode.runner === "datamosh") {
     const datamoshConfig = (options.modeConfig as DatamoshConfig | undefined) ?? {
       ...defaultDatamoshConfig
     };
@@ -214,7 +223,7 @@ export const runFfmpegJob = async (
       callbacks
     );
   }
-  if (options.modeId === "pixelsort") {
+  if (activeMode.runner === "pixelsort") {
     const pixelsortConfig = (options.modeConfig as PixelsortConfig | undefined) ?? {
       ...defaultPixelsortConfig
     };
@@ -232,9 +241,10 @@ export const runFfmpegJob = async (
     );
   }
 
-  const bitrateCapKbps = await resolveBitrateCapKbps(
+  const { bitrateCapKbps, needsEvenDimensions } = await resolveEncodingMetadata(
     inputPath,
-    options.encodingId
+    options.encodingId,
+    options.inputMetadata
   );
   const args = buildArgs(
     inputPath,
@@ -244,7 +254,8 @@ export const runFfmpegJob = async (
     options.encodingId,
     options.trimStartSeconds,
     options.trimEndSeconds,
-    bitrateCapKbps
+    bitrateCapKbps,
+    needsEvenDimensions
   );
   debug("ffmpeg args: %o", args);
   const feedProgress = createFfmpegProgressParser(
@@ -295,6 +306,8 @@ export const runFfmpegJob = async (
 
   return {
     outputPath,
-    cancel: () => child.kill()
+    cancel: async () => {
+      await child.kill();
+    }
   };
 };

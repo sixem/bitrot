@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getCurrentWindow, ProgressBarStatus, type UnlistenFn } from "@tauri-apps/api/window";
 import type { VideoAsset } from "@/domain/video";
+import type { VideoMetadata } from "@/system/ffprobe";
 import { runFfmpegJob, type FfmpegRunHandle } from "@/jobs/ffmpegRunner";
 import type { ModeConfigMap, ModeId } from "@/modes/definitions";
 import type { JobProgress, JobState } from "@/jobs/types";
@@ -114,7 +115,8 @@ const useFfmpegJob = () => {
       modeConfig?: ModeConfigMap[ModeId],
       encodingId?: EncodingId,
       trimStartSeconds?: number,
-      trimEndSeconds?: number
+      trimEndSeconds?: number,
+      metadata?: VideoMetadata
     ) => {
       if (!asset.path || asset.path.trim().length === 0) {
         return;
@@ -148,7 +150,8 @@ const useFfmpegJob = () => {
             modeConfig,
             encodingId,
             trimStartSeconds,
-            trimEndSeconds
+            trimEndSeconds,
+            inputMetadata: metadata
           },
           {
             onProgress: (progress) => {

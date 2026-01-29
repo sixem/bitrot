@@ -3,6 +3,11 @@ import { invoke } from "@tauri-apps/api/core";
 import type { VideoAsset } from "@/domain/video";
 import { createFfmpegProgressParser } from "@/jobs/ffmpegProgress";
 import { joinOutputPath, pathsMatch, splitOutputPath } from "@/jobs/output";
+import {
+  SAFE_SCALE_FILTER,
+  buildAudioArgs,
+  buildContainerArgs
+} from "@/jobs/ffmpegArgs";
 import type { JobProgress } from "@/jobs/types";
 import {
   DEFAULT_ENCODING_ID,
@@ -20,6 +25,7 @@ import {
   type CommandHandle,
   type CommandSource
 } from "@/system/shellCommand";
+import { sanitizePath } from "@/system/path";
 import makeDebug from "@/utils/debug";
 
 type DatamoshCallbacks = {
@@ -41,32 +47,8 @@ export type DatamoshRunHandle = {
 
 const debug = makeDebug("jobs:datamosh");
 
-const sanitizePath = (value: string) => value.trim().replace(/^"+|"+$/g, "");
-// libx264 requires even dimensions; we trim odd pixels safely.
-const SAFE_SCALE_FILTER = "scale=trunc(iw/2)*2:trunc(ih/2)*2,setsar=1";
 const MIN_GOP_SIZE = 30;
 const MAX_GOP_SIZE = 600;
-
-const getExtension = (path: string) => {
-  const clean = path.trim().toLowerCase();
-  const dotIndex = clean.lastIndexOf(".");
-  return dotIndex >= 0 ? clean.slice(dotIndex + 1) : "";
-};
-
-const buildAudioArgs = (outputPath: string) => {
-  const extension = getExtension(outputPath);
-  if (extension === "mp4" || extension === "m4v") {
-    return ["-c:a", "aac", "-b:a", "192k"];
-  }
-  return ["-c:a", "copy"];
-};
-
-const buildContainerArgs = (outputPath: string) => {
-  const extension = getExtension(outputPath);
-  return extension === "mp4" || extension === "m4v"
-    ? ["-movflags", "+faststart"]
-    : [];
-};
 
 const normalizeTrimRange = (start?: number, end?: number) => {
   if (typeof start !== "number" || typeof end !== "number") {
@@ -622,7 +604,14 @@ export const runDatamoshJob = async (
     });
   };
 
-  const { child } = await spawnWithFallback("ffmpeg", args, bindHandlers);
+  let child: { kill: () => Promise<void> };
+  try {
+    ({ child } = await spawnWithFallback("ffmpeg", args, bindHandlers));
+  } catch (error) {
+    debug("compat transcode spawn failed: %O", error);
+    await cleanupTemps([tempPath, rawPath, moshedPath, remuxPath]);
+    throw error;
+  }
 
   return {
     outputPath: cleanOutput,

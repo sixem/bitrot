@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { ModeId } from "@/modes/definitions";
+import { getModeDefinition, type ModeId } from "@/modes/definitions";
 import { splitOutputPath, joinOutputPath } from "@/jobs/output";
 import { getDatamoshTempPaths } from "@/jobs/datamoshRunner";
 import makeDebug from "@/utils/debug";
@@ -23,10 +23,11 @@ const buildPixelsortTempPath = (outputPath: string) => {
 
 const buildCleanupEntry = (outputPath: string, modeId?: ModeId): CleanupEntry => {
   const tempPaths: string[] = [];
-  if (modeId === "datamosh") {
+  const mode = getModeDefinition(modeId);
+  if (mode.runner === "datamosh") {
     const temps = getDatamoshTempPaths(outputPath);
     tempPaths.push(temps.tempPath, temps.rawPath, temps.moshedPath, temps.remuxPath);
-  } else if (modeId === "pixelsort") {
+  } else if (mode.runner === "pixelsort") {
     tempPaths.push(buildPixelsortTempPath(outputPath));
   }
 
