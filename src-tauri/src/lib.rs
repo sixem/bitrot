@@ -121,38 +121,29 @@ fn reveal_in_folder(path: String) -> Result<(), String> {
   {
     let mut command = std::process::Command::new("explorer");
     command.arg(&folder);
-    let status = command
-      .status()
+    command
+      .spawn()
       .map_err(|error| format!("Failed to open Explorer: {error}"))?;
-    if status.success() {
-      return Ok(());
-    }
-    return Err("Explorer failed to open the path.".to_string());
+    return Ok(());
   }
 
   #[cfg(target_os = "macos")]
   {
     let mut command = std::process::Command::new("open");
     command.arg(&folder);
-    let status = command
-      .status()
+    command
+      .spawn()
       .map_err(|error| format!("Failed to open Finder: {error}"))?;
-    if status.success() {
-      return Ok(());
-    }
-    return Err("Finder failed to open the path.".to_string());
+    return Ok(());
   }
 
   #[cfg(all(unix, not(target_os = "macos")))]
   {
-    let status = std::process::Command::new("xdg-open")
+    std::process::Command::new("xdg-open")
       .arg(&folder)
-      .status()
+      .spawn()
       .map_err(|error| format!("Failed to open file manager: {error}"))?;
-    if status.success() {
-      return Ok(());
-    }
-    return Err("File manager failed to open the folder.".to_string());
+    return Ok(());
   }
 }
 
