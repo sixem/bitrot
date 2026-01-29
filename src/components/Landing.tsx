@@ -64,7 +64,7 @@ const Landing = ({ isReady, onVideoSelected }: LandingProps) => {
             <ul>
               <li>Pick a mode and configure it to your liking.</li>
               <li>Trim the video if required, and set encoding presets.</li>
-              <li>Render the full video.</li>
+              <li>Render the full video and get your result.</li>
             </ul>
           </div>
         </section>
@@ -72,7 +72,7 @@ const Landing = ({ isReady, onVideoSelected }: LandingProps) => {
 
       <div className="drag-overlay" data-active={isDragging}>
         <div className="drag-overlay-inner">
-          <p className="drag-title">Drop to corrupt</p>
+          <p className="drag-title">Drop to glitch</p>
           <p className="drag-subtitle">We will preview before export.</p>
         </div>
       </div>
