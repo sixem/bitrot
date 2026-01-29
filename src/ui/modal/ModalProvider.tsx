@@ -5,10 +5,14 @@ export type ModalPayload = {
   title: string;
   message: string;
   confirmLabel?: string;
+  cancelLabel?: string;
+  onConfirm?: () => void;
+  onCancel?: () => void;
 };
 
 type ModalContextValue = {
   openModal: (payload: ModalPayload) => void;
+  openConfirm: (payload: ModalPayload) => Promise<boolean>;
   closeModal: () => void;
 };
 
@@ -30,12 +34,31 @@ const ModalProvider = ({ children }: ModalProviderProps) => {
     setModal(null);
   }, []);
 
+  const openConfirm = useCallback((payload: ModalPayload) => {
+    return new Promise<boolean>((resolve) => {
+      setModal({
+        ...payload,
+        confirmLabel: payload.confirmLabel ?? "Confirm",
+        cancelLabel: payload.cancelLabel ?? "Cancel",
+        onConfirm: () => {
+          resolve(true);
+          setModal(null);
+        },
+        onCancel: () => {
+          resolve(false);
+          setModal(null);
+        }
+      });
+    });
+  }, []);
+
   const value = useMemo(
     () => ({
       openModal,
+      openConfirm,
       closeModal
     }),
-    [openModal, closeModal]
+    [openModal, openConfirm, closeModal]
   );
 
   return (
@@ -46,6 +69,9 @@ const ModalProvider = ({ children }: ModalProviderProps) => {
         title={modal?.title ?? ""}
         message={modal?.message ?? ""}
         confirmLabel={modal?.confirmLabel}
+        cancelLabel={modal?.cancelLabel}
+        onConfirm={modal?.onConfirm}
+        onCancel={modal?.onCancel}
         onClose={closeModal}
       />
     </ModalContext.Provider>

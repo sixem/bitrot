@@ -6,6 +6,9 @@ type ModalProps = {
   title: string;
   message: string;
   confirmLabel?: string;
+  cancelLabel?: string;
+  onConfirm?: () => void;
+  onCancel?: () => void;
   onClose: () => void;
 };
 
@@ -15,9 +18,35 @@ const Modal = ({
   title,
   message,
   confirmLabel = "Close",
+  cancelLabel,
+  onConfirm,
+  onCancel,
   onClose
 }: ModalProps) => {
   const shouldCloseRef = useRef(false);
+  const handleConfirm = () => {
+    if (onConfirm) {
+      onConfirm();
+      return;
+    }
+    onClose();
+  };
+
+  const handleCancel = () => {
+    if (onCancel) {
+      onCancel();
+      return;
+    }
+    onClose();
+  };
+
+  const handleDismiss = () => {
+    if (cancelLabel) {
+      handleCancel();
+    } else {
+      handleConfirm();
+    }
+  };
 
   useEffect(() => {
     if (!isOpen) {
@@ -26,13 +55,13 @@ const Modal = ({
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
-        onClose();
+        handleDismiss();
       }
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isOpen, onClose]);
+  }, [cancelLabel, isOpen, onClose, onCancel, onConfirm]);
 
   if (!isOpen) {
     return null;
@@ -47,7 +76,7 @@ const Modal = ({
       shouldCloseRef.current && event.target === event.currentTarget;
     shouldCloseRef.current = false;
     if (shouldClose) {
-      onClose();
+      handleDismiss();
     }
   };
 
@@ -76,7 +105,16 @@ const Modal = ({
           {message}
         </p>
         <div className="modal-actions">
-          <button className="modal-button" type="button" onClick={onClose}>
+          {cancelLabel ? (
+            <button className="modal-button" type="button" onClick={handleCancel}>
+              {cancelLabel}
+            </button>
+          ) : null}
+          <button
+            className="modal-button modal-button--primary"
+            type="button"
+            onClick={handleConfirm}
+          >
             {confirmLabel}
           </button>
         </div>
