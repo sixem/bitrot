@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { getCurrentWindow, ProgressBarStatus, type UnlistenFn } from "@tauri-apps/api/window";
+import { getCurrentWindow, ProgressBarStatus } from "@tauri-apps/api/window";
 import type { VideoAsset } from "@/domain/video";
 import type { VideoMetadata } from "@/system/ffprobe";
 import { runFfmpegJob, type FfmpegRunHandle } from "@/jobs/ffmpegRunner";
@@ -12,6 +12,7 @@ import {
   cleanupJob,
   registerJobCleanup
 } from "@/jobs/jobCleanup";
+import useModal from "@/ui/modal/useModal";
 import makeDebug from "@/utils/debug";
 
 const initialProgress: JobProgress = {
@@ -25,7 +26,6 @@ const initialState: JobState = {
 
 const debug = makeDebug("jobs:ffmpeg");
 const appWindow = getCurrentWindow();
-
 const formatErrorWithLogs = (message: string, logTail: string[]) => {
   if (logTail.length === 0) {
     return message;
@@ -59,6 +59,7 @@ const setTaskbarProgress = async (status: ProgressBarStatus, progress?: number) 
 
 // Tracks a single ffmpeg job and exposes run/cancel controls.
 const useFfmpegJob = () => {
+  const { openConfirm } = useModal();
   const [job, setJob] = useState<JobState>(initialState);
   const handleRef = useRef<FfmpegRunHandle | null>(null);
   const runningRef = useRef(false);
@@ -66,9 +67,35 @@ const useFfmpegJob = () => {
   const closingRef = useRef(false);
   const logBufferRef = useRef<string[]>([]);
   const cleanupPathRef = useRef<string | null>(null);
+  const jobStatusRef = useRef<JobState["status"]>(initialState.status);
+
+  const requestCloseConfirmation = useCallback(async () => {
+    try {
+      return await openConfirm({
+        title: "Quit Bitrot",
+        message: "A render is still running. Cancel it and quit Bitrot?",
+        confirmLabel: "Quit",
+        cancelLabel: "Keep rendering"
+      });
+    } catch (error) {
+      debug("close confirmation failed: %O", error);
+    }
+
+    if (typeof window !== "undefined" && typeof window.confirm === "function") {
+      return window.confirm(
+        "A render is still running. Cancel it and quit Bitrot?"
+      );
+    }
+
+    return true;
+  }, [openConfirm]);
 
   useEffect(() => {
-    let unlisten: UnlistenFn | null = null;
+    jobStatusRef.current = job.status;
+  }, [job.status]);
+
+  useEffect(() => {
+    let unlisten: (() => void) | null = null;
 
     appWindow
       .onCloseRequested(async (event) => {
@@ -76,9 +103,17 @@ const useFfmpegJob = () => {
           return;
         }
 
-        if (runningRef.current) {
+        const isRunning =
+          runningRef.current || jobStatusRef.current === "running";
+        if (isRunning) {
           event.preventDefault();
           closingRef.current = true;
+          const shouldClose = await requestCloseConfirmation();
+          if (!shouldClose) {
+            closingRef.current = false;
+            return;
+          }
+
           cancelRef.current = true;
           try {
             await handleRef.current?.cancel();
@@ -86,11 +121,14 @@ const useFfmpegJob = () => {
             debug("cancel on close failed: %O", error);
           }
           await cleanupAllJobs();
-          await appWindow.close();
+          try {
+            await appWindow.close();
+          } catch (error) {
+            debug("app close failed: %O", error);
+          }
+          closingRef.current = false;
           return;
         }
-
-        await cleanupAllJobs();
       })
       .then((stop) => {
         unlisten = stop;
