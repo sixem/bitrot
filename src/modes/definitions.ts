@@ -14,6 +14,10 @@ import {
   type PixelsortConfig
 } from "@/modes/pixelsort";
 import {
+  defaultModuloMappingConfig,
+  type ModuloMappingConfig
+} from "@/modes/moduloMapping";
+import {
   buildVhsFilter,
   defaultVhsConfig,
   type VhsConfig
@@ -26,12 +30,13 @@ export type ModeId =
   | "vhs"
   | "glitch"
   | "datablend"
+  | "modulo-mapping"
   | "pixelsort"
   | "datamosh";
 
 export type ModeEngine = "ffmpeg" | "native";
-export type ModeRunner = "ffmpeg" | "pixelsort" | "datamosh";
-export type ModePreview = "pixelsort";
+export type ModeRunner = "ffmpeg" | "pixelsort" | "datamosh" | "modulo-mapping";
+export type ModePreview = "pixelsort" | "modulo-mapping";
 
 export type ModeConfigMap = {
   copy: Record<string, never>;
@@ -39,6 +44,7 @@ export type ModeConfigMap = {
   vhs: VhsConfig;
   glitch: GlitchConfig;
   datablend: DatablendConfig;
+  "modulo-mapping": ModuloMappingConfig;
   pixelsort: PixelsortConfig;
   datamosh: DatamoshConfig;
 };
@@ -112,6 +118,17 @@ export const MODE_DEFINITIONS: ModeDefinition[] = [
     encode: "h264"
   },
   {
+    id: "modulo-mapping",
+    label: "Modulo mapping",
+    description: "Re-index pixels with modular arithmetic for patterned corruption.",
+    engine: "native",
+    runner: "modulo-mapping",
+    preview: "modulo-mapping",
+    isExperimental: true,
+    defaultConfig: defaultModuloMappingConfig,
+    encode: "h264"
+  },
+  {
     id: "datamosh",
     label: "Datamosh (classic)",
     description: "Scene-aware I-frame removal for classic smear effects.",
@@ -141,6 +158,7 @@ export const createModeConfigs = (): ModeConfigMap => ({
   vhs: { ...defaultVhsConfig },
   glitch: { ...defaultGlitchConfig },
   datablend: { ...defaultDatablendConfig },
+  "modulo-mapping": { ...defaultModuloMappingConfig },
   pixelsort: { ...defaultPixelsortConfig },
   datamosh: { ...defaultDatamoshConfig }
 });
