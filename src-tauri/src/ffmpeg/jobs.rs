@@ -1,3 +1,5 @@
+// Tauri command bridge for spawning and monitoring ffmpeg/ffprobe processes.
+
 use std::{
   collections::HashMap,
   sync::{Arc, Mutex}

@@ -1,8 +1,10 @@
-mod datamosh;
 mod ffmpeg;
-mod ffmpeg_jobs;
-mod ffprobe_frames;
-mod pixelsort;
+mod modes;
+mod native;
+
+use ffmpeg::{frames as ffprobe_frames, jobs as ffmpeg_jobs};
+use modes::{byte_range, datamosh, pixelsort};
+use native::preview as native_preview;
 
 use std::path::{Path, PathBuf};
 
@@ -166,8 +168,9 @@ pub fn run() {
   tauri::Builder::default()
     .plugin(tauri_plugin_dialog::init())
     .plugin(tauri_plugin_shell::init())
-    .manage(pixelsort::PixelsortJobs::default())
-    .manage(pixelsort::PreviewBuffers::default())
+    .manage(pixelsort::jobs::PixelsortJobs::default())
+    .manage(byte_range::ModuloMappingJobs::default())
+    .manage(native_preview::PreviewBuffers::default())
     .manage(ffmpeg_jobs::FfmpegJobs::default())
     .invoke_handler(tauri::generate_handler![
       datamosh_bitstream,
@@ -181,12 +184,18 @@ pub fn run() {
       path_exists,
       reveal_in_folder,
       file_size,
-      pixelsort::pixelsort_process,
-      pixelsort::pixelsort_cancel,
-      pixelsort::pixelsort_preview_start,
-      pixelsort::pixelsort_preview_append,
-      pixelsort::pixelsort_preview_finish,
-      pixelsort::pixelsort_preview_discard
+      byte_range::modulo_mapping_process,
+      byte_range::modulo_mapping_cancel,
+      byte_range::modulo_mapping_preview_start,
+      byte_range::modulo_mapping_preview_append,
+      byte_range::modulo_mapping_preview_finish,
+      byte_range::modulo_mapping_preview_discard,
+      pixelsort::jobs::pixelsort_process,
+      pixelsort::jobs::pixelsort_cancel,
+      pixelsort::preview::pixelsort_preview_start,
+      pixelsort::preview::pixelsort_preview_append,
+      pixelsort::preview::pixelsort_preview_finish,
+      pixelsort::preview::pixelsort_preview_discard
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");

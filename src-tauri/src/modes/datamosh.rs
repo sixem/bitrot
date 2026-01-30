@@ -461,4 +461,77 @@ mod tests {
     remove_path(&output_path);
     remove_dir(&temp_dir);
   }
+
+  #[test]
+  fn datamosh_prepends_extradata_prefix() {
+    let temp_dir = unique_temp_dir("datamosh-extradata");
+    let header = make_unit(0xB0, &[0x22, 0x33]);
+    let vop = make_unit(0xB6, &[0b0000_0000, 0xCC]);
+    let input_bytes = [header.clone(), vop.clone()].concat();
+    let input_path = write_temp_file(&temp_dir, "input.m4v", &input_bytes);
+    let output_path = temp_dir.join("output.m4v");
+
+    let result = process_datamosh(
+      input_path.to_str().unwrap(),
+      output_path.to_str().unwrap(),
+      1.0,
+      &[],
+      0.0,
+      1,
+      Some("B0AABB"),
+    );
+    assert!(result.is_ok());
+
+    let output = fs::read(&output_path).unwrap();
+    // Extradata gets a start code prefix before being written.
+    assert!(output.starts_with(&[0x00, 0x00, 0x01, 0xB0, 0xAA, 0xBB]));
+    assert!(contains_slice(&output, &header));
+    assert!(contains_slice(&output, &vop));
+
+    remove_path(&input_path);
+    remove_path(&output_path);
+    remove_dir(&temp_dir);
+  }
+
+  #[test]
+  fn datamosh_drops_intra_frames_only_inside_windows() {
+    let temp_dir = unique_temp_dir("datamosh-window");
+    let header = make_unit(0xB0, &[0x00]);
+    let vop_zero = make_unit(0xB6, &[0b0000_0000, 0x10]);
+    let vop_one = make_unit(0xB6, &[0b0000_0000, 0x20]);
+    let vop_two = make_unit(0xB6, &[0b0000_0000, 0x30]);
+    let input_bytes = [
+      header.clone(),
+      vop_zero.clone(),
+      vop_one.clone(),
+      vop_two.clone()
+    ]
+    .concat();
+    let input_path = write_temp_file(&temp_dir, "input.m4v", &input_bytes);
+    let output_path = temp_dir.join("output.m4v");
+
+    let result = process_datamosh(
+      input_path.to_str().unwrap(),
+      output_path.to_str().unwrap(),
+      1.0,
+      &[SceneWindow {
+        start: 1.5,
+        end: 2.5,
+      }],
+      100.0,
+      123,
+      None,
+    );
+    assert!(result.is_ok());
+
+    let output = fs::read(&output_path).unwrap();
+    assert!(contains_slice(&output, &header));
+    assert!(contains_slice(&output, &vop_zero));
+    assert!(contains_slice(&output, &vop_one));
+    assert!(!contains_slice(&output, &vop_two));
+
+    remove_path(&input_path);
+    remove_path(&output_path);
+    remove_dir(&temp_dir);
+  }
 }

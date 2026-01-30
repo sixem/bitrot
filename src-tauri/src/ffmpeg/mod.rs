@@ -1,3 +1,8 @@
+// FFmpeg binary resolution + subcommands used across native pipelines.
+
+pub mod frames;
+pub mod jobs;
+
 use std::path::{Path, PathBuf};
 
 use serde::Serialize;
