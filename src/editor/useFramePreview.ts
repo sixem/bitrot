@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type { FrameMap } from "@/analysis/frameMap";
@@ -7,6 +7,7 @@ import type { VideoMetadata } from "@/system/ffprobe";
 import type { TrimSelectionState } from "@/editor/useTrimSelection";
 import { getModeDefinition, type ModeConfigMap, type ModeId } from "@/modes/definitions";
 import type { PixelsortConfig } from "@/modes/pixelsort";
+import { cleanupPreviewFile, registerPreviewFile } from "@/system/previewFiles";
 import makeDebug from "@/utils/debug";
 
 type FramePreviewOptions = {
@@ -35,6 +36,7 @@ type PreviewState = {
   isActive: boolean;
   isLoading: boolean;
   previewUrl?: string;
+  previewPath?: string;
   frame?: number;
   error?: string;
 };
@@ -107,24 +109,66 @@ const useFramePreview = ({
     isActive: false,
     isLoading: false
   });
+  // Track on-disk preview artifacts so they can be cleaned up when replaced.
+  const manualPreviewPathRef = useRef<string | null>(null);
+  const livePreviewPathRef = useRef<string | null>(null);
+  // Monotonic request id to ignore stale async preview responses.
+  const requestIdRef = useRef(0);
+  const isMountedRef = useRef(true);
+
+  const clearManualPreview = useCallback((reason: string) => {
+    requestIdRef.current += 1;
+    const previousPath = manualPreviewPathRef.current;
+    if (previousPath) {
+      manualPreviewPathRef.current = null;
+      void cleanupPreviewFile(previousPath, reason);
+    }
+    setManualPreview({ isActive: false, isLoading: false });
+  }, []);
+
+  const clearLivePreview = useCallback((reason: string) => {
+    const previousPath = livePreviewPathRef.current;
+    if (previousPath) {
+      livePreviewPathRef.current = null;
+      void cleanupPreviewFile(previousPath, reason);
+    }
+    setLivePreview({ isActive: false, isLoading: false });
+  }, []);
 
   useEffect(() => {
-    setManualPreview({ isActive: false, isLoading: false });
-    setLivePreview({ isActive: false, isLoading: false });
-  }, [asset.path, modeId]);
+    return () => {
+      isMountedRef.current = false;
+      const manualPath = manualPreviewPathRef.current;
+      if (manualPath) {
+        manualPreviewPathRef.current = null;
+        void cleanupPreviewFile(manualPath, "preview unmount");
+      }
+      const livePath = livePreviewPathRef.current;
+      if (livePath) {
+        livePreviewPathRef.current = null;
+        void cleanupPreviewFile(livePath, "preview unmount");
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    clearManualPreview("preview reset");
+    clearLivePreview("preview reset");
+  }, [asset.path, modeId, clearLivePreview, clearManualPreview]);
 
   useEffect(() => {
     if (!isSupported) {
+      clearManualPreview("preview unsupported");
       return;
     }
-    setManualPreview((prev) =>
-      prev.isActive ? { isActive: false, isLoading: false } : prev
-    );
-  }, [isSupported, modeConfig]);
+    if (manualPreview.isActive) {
+      clearManualPreview("preview config change");
+    }
+  }, [isSupported, modeConfig, manualPreview.isActive, clearManualPreview]);
 
   useEffect(() => {
     if (!isSupported || !isProcessing) {
-      setLivePreview({ isActive: false, isLoading: false });
+      clearLivePreview("preview stopped");
       return;
     }
 
@@ -135,10 +179,18 @@ const useFramePreview = ({
       if (!isMounted) {
         return;
       }
+      const nextPath = event.payload.path;
+      registerPreviewFile(nextPath);
+      const previousPath = livePreviewPathRef.current;
+      livePreviewPathRef.current = nextPath;
+      if (previousPath && previousPath !== nextPath) {
+        void cleanupPreviewFile(previousPath, "live preview replaced");
+      }
       setLivePreview({
         isActive: true,
         isLoading: false,
-        previewUrl: buildPreviewUrl(event.payload.path),
+        previewUrl: buildPreviewUrl(nextPath),
+        previewPath: nextPath,
         frame: event.payload.frame
       });
     })
@@ -159,7 +211,7 @@ const useFramePreview = ({
         unlisten();
       }
     };
-  }, [isProcessing, isSupported]);
+  }, [clearLivePreview, isProcessing, isSupported]);
 
   const requestPreview = useCallback(
     async (timeSeconds: number) => {
@@ -204,15 +256,17 @@ const useFramePreview = ({
         durationSeconds > 0
           ? Math.min(clampedTime, Math.max(0, durationSeconds - epsilon))
           : clampedTime;
+      const trimStart = trim?.start;
+      const trimEnd = trim?.end;
       const trimActive =
         !!trim?.enabled &&
         !!trim.isValid &&
-        typeof trim.start === "number" &&
-        typeof trim.end === "number";
+        typeof trimStart === "number" &&
+        typeof trimEnd === "number";
       const trimmedTime = trimActive
         ? Math.min(
-            Math.max(safeTime, trim.start),
-            Math.max(trim.start, trim.end - epsilon)
+            Math.max(safeTime, trimStart),
+            Math.max(trimStart, trimEnd - epsilon)
           )
         : safeTime;
       const keyframeSeconds = frameMap?.keyframeTimes
@@ -220,6 +274,8 @@ const useFramePreview = ({
         : undefined;
 
       try {
+        const requestId = requestIdRef.current + 1;
+        requestIdRef.current = requestId;
         const response = await invoke<PixelsortPreviewResponse>("pixelsort_preview", {
           inputPath: asset.path,
           timeSeconds: trimmedTime,
@@ -228,6 +284,18 @@ const useFramePreview = ({
           height: metadata.height,
           config: modeConfig as PixelsortConfig
         });
+
+        if (!isMountedRef.current || requestId !== requestIdRef.current) {
+          void cleanupPreviewFile(response.path, "preview stale");
+          return;
+        }
+
+        registerPreviewFile(response.path);
+        const previousPath = manualPreviewPathRef.current;
+        manualPreviewPathRef.current = response.path;
+        if (previousPath && previousPath !== response.path) {
+          void cleanupPreviewFile(previousPath, "preview replaced");
+        }
 
         const frame =
           typeof metadata.fps === "number" && Number.isFinite(metadata.fps)
@@ -238,25 +306,27 @@ const useFramePreview = ({
           isActive: true,
           isLoading: false,
           previewUrl: buildPreviewUrl(response.path),
+          previewPath: response.path,
           frame
         });
       } catch (error) {
         const message =
           error instanceof Error ? error.message : "Preview render failed.";
         debug("preview failed: %O", error);
-        setManualPreview({
+        setManualPreview((prev) => ({
+          ...prev,
           isActive: true,
           isLoading: false,
           error: message
-        });
+        }));
       }
     },
     [asset.path, frameMap?.keyframeTimes, isSupported, metadata, modeConfig, trim]
   );
 
   const clearPreview = useCallback(() => {
-    setManualPreview({ isActive: false, isLoading: false });
-  }, []);
+    clearManualPreview("preview cleared");
+  }, [clearManualPreview]);
 
   const previewState = isProcessing ? livePreview : manualPreview;
   const frameLabel =
