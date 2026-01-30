@@ -1,11 +1,17 @@
-﻿import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import type { VideoAsset } from "@/domain/video";
 import type { FrameMap } from "@/analysis/frameMap";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import formatDuration from "@/utils/formatDuration";
+import { clampTime } from "@/utils/time";
 import type { FramePreviewControl } from "@/editor/useFramePreview";
-import type { TrimSelectionState } from "@/editor/useTrimSelection";
-import { BookmarkIcon, ClearIcon } from "@/ui/icons";
+import { sanitizePath } from "@/system/path";
+import type { TrimControl } from "@/editor/preview/types";
+import usePreviewVideoState from "@/editor/preview/usePreviewVideoState";
+import PreviewSurface from "@/editor/preview/PreviewSurface";
+import PreviewToolbar from "@/editor/preview/PreviewToolbar";
+import PreviewRange from "@/editor/preview/PreviewRange";
+import PreviewScrubber from "@/editor/preview/PreviewScrubber";
 
 type VideoPreviewProps = {
   asset: VideoAsset;
@@ -22,14 +28,6 @@ type VideoPreviewProps = {
   trim?: TrimControl;
 };
 
-type TrimControl = {
-  selection: TrimSelectionState;
-  markIn: (timeSeconds: number) => void;
-  markOut: (timeSeconds: number) => void;
-  clear: () => void;
-  toggleEnabled: () => void;
-};
-
 // Ignore keyboard shortcuts when the user is typing or adjusting form fields.
 const isEditableTarget = (target: EventTarget | null) => {
   if (!(target instanceof HTMLElement)) {
@@ -40,19 +38,6 @@ const isEditableTarget = (target: EventTarget | null) => {
   }
   const tag = target.tagName;
   return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
-};
-
-// Strip quotes that sometimes wrap drag-drop paths.
-const sanitizePath = (path: string) => path.trim().replace(/^"+|"+$/g, "");
-
-const clampTime = (time: number, duration?: number) => {
-  if (!Number.isFinite(time)) {
-    return 0;
-  }
-  if (!Number.isFinite(duration)) {
-    return Math.max(0, time);
-  }
-  return Math.min(Math.max(time, 0), Math.max(0, duration ?? 0));
 };
 
 const formatDurationSafe = (value?: number) =>
@@ -165,20 +150,45 @@ const VideoPreview = ({
   renderTimeSeconds,
   trim
 }: VideoPreviewProps) => {
-  const videoRef = useRef<HTMLVideoElement>(null);
   // Track arrow-key hold state for tap-vs-hold behavior.
   const holdKeyRef = useRef<"ArrowLeft" | "ArrowRight" | null>(null);
   const holdActiveRef = useRef(false);
   const reverseIntervalRef = useRef<number | null>(null);
   const holdPlaybackRef = useRef<{ playbackRate: number } | null>(null);
   const lastMarkEdgeRef = useRef<"start" | "end">("end");
-  const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState<number | undefined>(undefined);
-  const [isReady, setIsReady] = useState(false);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [volume, setVolume] = useState(0.2);
   const [skipSeconds, setSkipSeconds] = useState(5);
+
+  // Strip quotes that sometimes wrap drag-drop paths.
+  const sourcePath = sanitizePath(asset.path);
+  const sourceUrl = useMemo(
+    () => (sourcePath.length > 0 ? convertFileSrc(sourcePath) : ""),
+    [sourcePath]
+  );
+
+  // Centralize the <video> element state and event handlers.
+  const {
+    videoRef,
+    currentTime,
+    setCurrentTime,
+    duration,
+    isReady,
+    isPlaying,
+    setIsPlaying,
+    error,
+    volume,
+    setVolume,
+    resetState,
+    handleTogglePlayback,
+    handleLoadedMetadata,
+    handleTimeUpdate,
+    handlePlay,
+    handlePause,
+    handleError
+  } = usePreviewVideoState({
+    sourceUrl,
+    holdActiveRef,
+    initialVolume: 0.2
+  });
 
   const stopHoldPlayback = useCallback(() => {
     if (!holdActiveRef.current && reverseIntervalRef.current === null) {
@@ -202,13 +212,7 @@ const VideoPreview = ({
     holdPlaybackRef.current = null;
     holdActiveRef.current = false;
     holdKeyRef.current = null;
-  }, []);
-
-  const sourcePath = sanitizePath(asset.path);
-  const sourceUrl = useMemo(
-    () => (sourcePath.length > 0 ? convertFileSrc(sourcePath) : ""),
-    [sourcePath]
-  );
+  }, [setCurrentTime, setIsPlaying, videoRef]);
 
   const resolvedDuration = Number.isFinite(duration)
     ? duration
@@ -255,27 +259,8 @@ const VideoPreview = ({
   // Reset playback state when the source changes.
   useEffect(() => {
     stopHoldPlayback();
-    const video = videoRef.current;
-    if (video) {
-      video.pause();
-      video.currentTime = 0;
-    }
-    setCurrentTime(0);
-    setDuration(undefined);
-    setIsReady(false);
-    setIsPlaying(false);
-    setError(null);
-  }, [sourceUrl, stopHoldPlayback]);
-
-  // Keep the element in sync with the current volume value.
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video) {
-      return;
-    }
-    video.volume = volume;
-    video.muted = volume === 0;
-  }, [volume, sourceUrl]);
+    resetState();
+  }, [resetState, sourceUrl, stopHoldPlayback]);
 
   // Move the playhead while keeping it inside the available duration.
   const seekTo = useCallback(
@@ -309,61 +294,6 @@ const VideoPreview = ({
     },
     [cycleSkipSeconds]
   );
-
-  const handleTogglePlayback = async () => {
-    const video = videoRef.current;
-    if (!video || !sourceUrl || error) {
-      return;
-    }
-    if (video.paused) {
-      try {
-        await video.play();
-      } catch {
-        setError("Playback blocked. Click play again.");
-      }
-      return;
-    }
-    video.pause();
-  };
-
-  const handleLoadedMetadata = () => {
-    const video = videoRef.current;
-    if (!video) {
-      return;
-    }
-    if (Number.isFinite(video.duration)) {
-      setDuration(video.duration);
-    }
-    setIsReady(true);
-    setError(null);
-  };
-
-  const handleTimeUpdate = () => {
-    const video = videoRef.current;
-    if (!video) {
-      return;
-    }
-    setCurrentTime(video.currentTime);
-  };
-
-  const handlePlay = () => {
-    if (holdActiveRef.current) {
-      return;
-    }
-    setIsPlaying(true);
-  };
-
-  const handlePause = () => {
-    if (holdActiveRef.current) {
-      return;
-    }
-    setIsPlaying(false);
-  };
-
-  const handleError = () => {
-    setError("Unable to load preview.");
-    setIsReady(false);
-  };
 
   // Keep the scrubber in sync with render progress when previewing a job.
   useEffect(() => {
@@ -511,6 +441,32 @@ const VideoPreview = ({
     const maxPct = Math.min(100, markerPct + markerWidth);
     return buildTrimGradient(minPct, maxPct, highlight);
   }, [resolvedDuration, trimEnabled, trimSelection?.end, trimSelection?.start]);
+  // Precompute toolbar + trim labels so the render stays focused on layout.
+  const frameInfo =
+    clampedFrame !== undefined && totalFrames !== undefined
+      ? { current: clampedFrame, total: totalFrames }
+      : undefined;
+  const timeCurrentLabel = formatDuration(currentTime);
+  const timeTotalLabel = formatDurationSafe(resolvedDuration);
+  const playDisabled = !sourceUrl || controlsDisabled;
+  const trimClearDisabled =
+    controlsDisabled ||
+    (trimSelection?.start === undefined && trimSelection?.end === undefined);
+  const trimToggleDisabled = !trimHasRange || controlsDisabled;
+  const volumeDisabled = !sourceUrl || controlsDisabled;
+  const trimInfoLines = trim
+    ? trimHasRange
+      ? [
+          `In ${formatTimeWithFrame(trimSelection?.start)}`,
+          `Out ${formatTimeWithFrame(trimSelection?.end)}`,
+          `Len ${formatTimeWithFrame(trimLengthSeconds, trimLengthFrames)}`
+        ]
+      : trimSelection?.start !== undefined
+        ? [`Start ${formatTimeWithFrame(trimSelection.start)}`, "Awaiting end"]
+        : trimSelection?.end !== undefined
+          ? [`End ${formatTimeWithFrame(trimSelection.end)}`, "Awaiting start"]
+          : ["No selection"]
+    : [];
 
   const handlePreviewToggle = () => {
     if (!preview || previewDisabled) {
@@ -522,6 +478,14 @@ const VideoPreview = ({
     }
     preview.onRequest(currentTime);
   };
+
+  const handleClearSelection = useCallback(() => {
+    trim?.clear();
+  }, [trim]);
+
+  const handleToggleSelection = useCallback(() => {
+    trim?.toggleEnabled();
+  }, [trim]);
 
   const handleRequestFrameMap = useCallback(() => {
     if (!onRequestFrameMap) {
@@ -744,6 +708,9 @@ const VideoPreview = ({
     };
   }, [stopHoldPlayback]);
 
+  // Ensure hold playback is stopped if the component unmounts mid-hold.
+  useEffect(() => () => stopHoldPlayback(), [stopHoldPlayback]);
+
   // Frame-accurate keyboard nudges for the playhead and trim markers.
   useEffect(() => {
     const canNudgeFrames = hasFrameMap || !!frameDurationSeconds;
@@ -850,221 +817,72 @@ const VideoPreview = ({
 
   return (
     <div className="preview-player" data-ready={isReady}>
-      <div className="preview-surface">
-        {showPreviewFrame && preview?.previewUrl && (
-          <img
-            className="preview-frame"
-            src={preview.previewUrl}
-            alt="Preview frame"
-          />
-        )}
-        {sourceUrl ? (
-          <video
-            ref={videoRef}
-            className="preview-video"
-            src={sourceUrl}
-            preload="metadata"
-            playsInline
-            onLoadedMetadata={handleLoadedMetadata}
-            onTimeUpdate={handleTimeUpdate}
-            onPlay={handlePlay}
-            onPause={handlePause}
-            onEnded={handlePause}
-            onError={handleError}
-          />
-        ) : (
-          <div className="preview-placeholder">No source loaded.</div>
-        )}
-        {!error && sourceUrl && !isReady && (
-          <div className="preview-overlay">Preparing preview...</div>
-        )}
-        {error && <div className="preview-overlay preview-overlay--error">{error}</div>}
-        {showPreviewStatus && preview?.error && (
-          <div className="preview-overlay preview-overlay--error">{preview.error}</div>
-        )}
-        {showPreviewStatus && preview?.isLoading && (
-          <div className="preview-overlay">Rendering preview frame...</div>
-        )}
-        {showPreviewStatus && preview?.isProcessing && !preview.previewUrl && (
-          <div className="preview-overlay">Waiting for preview...</div>
-        )}
-        {showPreviewToggle && preview && (
-          <div className="preview-corner">
-            <button
-              className="preview-toggle"
-              type="button"
-              onClick={handlePreviewToggle}
-              data-active={isPreviewActive}
-              disabled={previewDisabled}
-            >
-              {previewLabel}
-            </button>
-          </div>
-        )}
-      </div>
-
-      <div className="preview-toolbar">
-        <div className="preview-toolbar-top">
-          <div className="preview-controls">
-            <button
-              className="preview-button preview-button--toggle"
-              type="button"
-              onClick={handleTogglePlayback}
-              disabled={!sourceUrl || controlsDisabled}
-            >
-              {isPlaying ? "Pause" : "Play"}
-            </button>
-            <button
-              className="preview-button"
-              type="button"
-              onClick={() => stepBy(-skipSeconds)}
-              onContextMenu={handleSkipContextMenu}
-              disabled={!resolvedDuration || controlsDisabled}
-            >
-              -{skipSeconds}s
-            </button>
-            <button
-              className="preview-button"
-              type="button"
-              onClick={() => stepBy(skipSeconds)}
-              onContextMenu={handleSkipContextMenu}
-              disabled={!resolvedDuration || controlsDisabled}
-            >
-              +{skipSeconds}s
-            </button>
-          </div>
-          {trim && (
-            <div className="preview-toolbar-actions">
-              <button
-                className="preview-button preview-button--icon"
-                type="button"
-                onClick={handleMark}
-                disabled={!resolvedDuration || controlsDisabled}
-              >
-                <BookmarkIcon />
-                <span>Mark</span>
-              </button>
-              <button
-                className="preview-button preview-button--ghost preview-button--icon"
-                type="button"
-                onClick={trim.clear}
-                aria-label="Clear selection"
-                disabled={
-                  controlsDisabled ||
-                  (trimSelection?.start === undefined &&
-                    trimSelection?.end === undefined)
-                }
-              >
-                <ClearIcon />
-              </button>
-              <button
-                className="preview-button preview-button--ghost"
-                type="button"
-                onClick={trim.toggleEnabled}
-                data-active={trimEnabled}
-                disabled={!trimHasRange || controlsDisabled}
-              >
-                Use selection
-              </button>
-            </div>
-          )}
-          <div className="preview-time">
-            <span>{formatDuration(currentTime)}</span>
-            <span>/</span>
-            <span>{formatDurationSafe(resolvedDuration)}</span>
-            {clampedFrame !== undefined && totalFrames !== undefined && (
-              <>
-                <span className="preview-time-separator">|</span>
-                <span>Frame {clampedFrame}</span>
-                <span>/</span>
-                <span>{totalFrames}</span>
-              </>
-            )}
-          </div>
-        </div>
-        {showVfrWarning && (
-          <div className="preview-warning">
-            <span>{vfrWarningMessage}</span>
-            {showFrameMapAction && (
-              <button
-                className="preview-warning-action"
-                type="button"
-                onClick={handleRequestFrameMap}
-              >
-                {frameMapActionLabel}
-              </button>
-            )}
-          </div>
-        )}
-        {showCopyTrimWarning && (
-          <div className="preview-warning">
-            Copy mode trim requires re-encoding for frame-accurate cuts.
-          </div>
-        )}
-        {trim && (
-          <div className="preview-range" data-active={trimEnabled}>
-            <div className="preview-range-info">
-              {trimHasRange ? (
-                <>
-                  <span>In {formatTimeWithFrame(trimSelection?.start)}</span>
-                  <span>Out {formatTimeWithFrame(trimSelection?.end)}</span>
-                  <span>Len {formatTimeWithFrame(trimLengthSeconds, trimLengthFrames)}</span>
-                </>
-              ) : trimSelection?.start !== undefined ? (
-                <>
-                  <span>Start {formatTimeWithFrame(trimSelection.start)}</span>
-                  <span>Awaiting end</span>
-                </>
-              ) : trimSelection?.end !== undefined ? (
-                <>
-                  <span>End {formatTimeWithFrame(trimSelection.end)}</span>
-                  <span>Awaiting start</span>
-                </>
-              ) : (
-                <span>No selection</span>
-              )}
-            </div>
-            <div className="preview-audio">
-              <span className="preview-audio-label">Volume</span>
-              <input
-                className="preview-volume"
-                type="range"
-                min={0}
-                max={100}
-                step={1}
-                value={volumePercent}
-                onChange={(event) => setVolume(Number(event.target.value) / 100)}
-                disabled={!sourceUrl || controlsDisabled}
-                aria-label="Preview volume"
-              />
-              <span className="preview-audio-value">{volumePercent}%</span>
-            </div>
-          </div>
-        )}
-      </div>
-
-      <input
-        className="preview-scrub"
-        type="range"
-        min={0}
+      <PreviewSurface
+        sourceUrl={sourceUrl}
+        isReady={isReady}
+        error={error}
+        preview={preview}
+        showPreviewFrame={showPreviewFrame}
+        showPreviewStatus={showPreviewStatus}
+        showPreviewToggle={showPreviewToggle}
+        isPreviewActive={isPreviewActive}
+        previewLabel={previewLabel}
+        previewDisabled={previewDisabled}
+        onTogglePreview={handlePreviewToggle}
+        videoRef={videoRef}
+        onLoadedMetadata={handleLoadedMetadata}
+        onTimeUpdate={handleTimeUpdate}
+        onPlay={handlePlay}
+        onPause={handlePause}
+        onError={handleError}
+      />
+      <PreviewToolbar
+        isPlaying={isPlaying}
+        playDisabled={playDisabled}
+        controlsDisabled={controlsDisabled}
+        resolvedDuration={resolvedDuration}
+        skipSeconds={skipSeconds}
+        onTogglePlayback={handleTogglePlayback}
+        onStepBy={stepBy}
+        onSkipContextMenu={handleSkipContextMenu}
+        showTrimActions={!!trim}
+        onMark={handleMark}
+        onClearSelection={handleClearSelection}
+        onToggleTrim={handleToggleSelection}
+        trimEnabled={trimEnabled}
+        trimClearDisabled={trimClearDisabled}
+        trimToggleDisabled={trimToggleDisabled}
+        timeCurrentLabel={timeCurrentLabel}
+        timeTotalLabel={timeTotalLabel}
+        frameInfo={frameInfo}
+        vfrWarningMessage={showVfrWarning ? vfrWarningMessage : null}
+        showFrameMapAction={showFrameMapAction}
+        frameMapActionLabel={frameMapActionLabel}
+        onRequestFrameMap={handleRequestFrameMap}
+        showCopyTrimWarning={showCopyTrimWarning}
+        range={
+          trim ? (
+            <PreviewRange
+              isActive={trimEnabled}
+              infoLines={trimInfoLines}
+              volumePercent={volumePercent}
+              onVolumeChange={setVolume}
+              isDisabled={volumeDisabled}
+            />
+          ) : null
+        }
+      />
+      <PreviewScrubber
+        value={scrubValue}
         max={resolvedDuration ?? 0}
         step={frameMapStep ?? frameDurationSeconds ?? 0.01}
-        value={scrubValue}
-        onChange={(event) => seekTo(Number(event.target.value))}
-        disabled={!resolvedDuration || controlsDisabled}
-        aria-label="Scrub preview"
-        style={
-          trimTrack
-            ? ({ "--scrub-track": trimTrack } as CSSProperties)
-            : undefined
-        }
+        isDisabled={!resolvedDuration || controlsDisabled}
+        trimTrack={trimTrack}
+        onChange={seekTo}
       />
     </div>
   );
 };
 
 export default VideoPreview;
-
-
-
 

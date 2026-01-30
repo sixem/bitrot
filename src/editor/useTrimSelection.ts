@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { clampTime } from "@/utils/time";
 
 export type TrimSelectionState = {
   start?: number;
@@ -14,16 +15,6 @@ type TrimSelectionOptions = {
 };
 
 const MIN_RANGE_SECONDS = 0.01;
-
-const clampTime = (value: number, duration?: number) => {
-  if (!Number.isFinite(value)) {
-    return 0;
-  }
-  if (!Number.isFinite(duration)) {
-    return Math.max(0, value);
-  }
-  return Math.min(Math.max(0, value), Math.max(0, duration ?? 0));
-};
 
 const normalizeRange = (
   start: number | undefined,

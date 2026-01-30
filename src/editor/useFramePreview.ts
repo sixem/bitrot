@@ -16,6 +16,8 @@ type FramePreviewOptions = {
   modeConfig: ModeConfigMap[ModeId];
   metadata?: VideoMetadata;
   frameMap?: FrameMap;
+  // Used to scope live preview events to the active pixelsort job.
+  jobId?: string;
   isProcessing: boolean;
   trim?: TrimSelectionState;
 };
@@ -42,6 +44,7 @@ type PreviewState = {
 };
 
 type PixelsortPreviewPayload = {
+  jobId: string;
   frame: number;
   path: string;
 };
@@ -62,13 +65,10 @@ const buildPreviewUrl = (path: string) =>
 
 // Finds the closest keyframe time at or before the requested time.
 const findKeyframeAnchor = (keyframes: Float64Array, timeSeconds: number) => {
-  if (!Number.isFinite(timeSeconds) || timeSeconds <= 0) {
-    return 0;
-  }
   if (keyframes.length === 0) {
     return undefined;
   }
-  if (timeSeconds <= keyframes[0]) {
+  if (!Number.isFinite(timeSeconds) || timeSeconds <= keyframes[0]) {
     return keyframes[0];
   }
 
@@ -97,6 +97,7 @@ const useFramePreview = ({
   modeConfig,
   metadata,
   frameMap,
+  jobId,
   isProcessing,
   trim
 }: FramePreviewOptions): FramePreviewControl => {
@@ -179,6 +180,9 @@ const useFramePreview = ({
       if (!isMounted) {
         return;
       }
+      if (!jobId || event.payload.jobId !== jobId) {
+        return;
+      }
       const nextPath = event.payload.path;
       registerPreviewFile(nextPath);
       const previousPath = livePreviewPathRef.current;
@@ -211,7 +215,7 @@ const useFramePreview = ({
         unlisten();
       }
     };
-  }, [clearLivePreview, isProcessing, isSupported]);
+  }, [clearLivePreview, isProcessing, isSupported, jobId]);
 
   const requestPreview = useCallback(
     async (timeSeconds: number) => {

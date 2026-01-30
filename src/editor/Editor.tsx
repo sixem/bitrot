@@ -70,6 +70,7 @@ const Editor = ({ asset, onReplace }: EditorProps) => {
     modeConfig: modeConfigs[modeId],
     metadata: metadataState.metadata,
     frameMap: frameMapState.frameMap,
+    jobId: job.jobId,
     isProcessing: job.status === "running",
     trim: trimSelection.selection
   });
