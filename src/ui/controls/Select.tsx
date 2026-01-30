@@ -1,9 +1,17 @@
 import { createPortal } from "react-dom";
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type ReactNode
+} from "react";
 
 export type SelectOption = {
   value: string;
-  label: string;
+  label: ReactNode;
   disabled?: boolean;
 };
 
@@ -357,7 +365,7 @@ const Select = ({
   const menu = isOpen && menuStyle
     ? createPortal(
         <div
-          className="ui-select-menu"
+          className="ui-select-menu scrollable"
           style={{
             top: `${menuStyle.top}px`,
             left: `${menuStyle.left}px`,

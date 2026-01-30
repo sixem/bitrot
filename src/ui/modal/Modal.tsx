@@ -101,7 +101,7 @@ const Modal = ({
         <h2 id="modal-title" className="modal-title">
           {title}
         </h2>
-        <p id="modal-body" className="modal-body">
+        <p id="modal-body" className="modal-body scrollable">
           {message}
         </p>
         <div className="modal-actions">
