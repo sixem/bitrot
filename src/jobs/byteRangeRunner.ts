@@ -1,4 +1,5 @@
-// Tauri bridge for the Rust pixel sort pipeline with progress + log wiring.
+// Tauri bridge for the native modulo mapping pipeline.
+// File name retained to avoid a wide rename across the repo.
 import { invoke } from "@tauri-apps/api/core";
 import type { VideoAsset } from "@/domain/video";
 import type { JobProgress } from "@/jobs/types";
@@ -10,50 +11,50 @@ import {
   estimateTargetBitrateKbps
 } from "@/jobs/exportEncoding";
 import { DEFAULT_EXPORT_PROFILE, type ExportProfile } from "@/jobs/exportProfile";
-import type { PixelsortConfig } from "@/modes/pixelsort";
+import type { ModuloMappingConfig } from "@/modes/moduloMapping";
 import { sanitizePath } from "@/system/path";
 import { buildNativeEncoding } from "@/jobs/nativeEncoding";
 import { attachNativeJobListeners } from "@/jobs/nativeJobEvents";
 import { resolveNativeFps, resolveEvenDimensions } from "@/jobs/nativeVideo";
 import makeDebug from "@/utils/debug";
 
-type PixelsortCallbacks = {
+type ModuloMappingCallbacks = {
   onProgress: (progress: JobProgress) => void;
   onLog: (line: string) => void;
   onClose: (code: number | null, signal: string | null) => void;
   onError: (message: string) => void;
 };
 
-export type PixelsortRunHandle = {
+export type ModuloMappingRunHandle = {
   outputPath: string;
   jobId: string;
   cancel: () => Promise<void>;
 };
 
-const debug = makeDebug("jobs:pixelsort");
+const MODULO_MAPPING_EVENTS = {
+  progress: "modulo-mapping-progress",
+  log: "modulo-mapping-log"
+};
+
+const debug = makeDebug("jobs:modulo-mapping");
 
 const createJobId = () =>
-  `pixelsort-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
-
-const PIXELSORT_EVENTS = {
-  progress: "pixelsort-progress",
-  log: "pixelsort-log"
-};
+  `modulo-mapping-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
 
 const isCancelError = (message: string) =>
   message.toLowerCase().includes("canceled");
 
-// Runs the Rust-powered pixel sort pipeline for full per-pixel control.
-export const runPixelsortJob = async (
+// Runs the native modulo mapping pipeline for frame-level corruption.
+export const runModuloMappingJob = async (
   asset: VideoAsset,
   outputPath: string,
   durationSeconds: number | undefined,
-  config: PixelsortConfig,
+  config: ModuloMappingConfig,
   profile: ExportProfile,
   trimStartSeconds: number | undefined,
   trimEndSeconds: number | undefined,
-  callbacks: PixelsortCallbacks
-): Promise<PixelsortRunHandle> => {
+  callbacks: ModuloMappingCallbacks
+): Promise<ModuloMappingRunHandle> => {
   const inputPath = sanitizePath(asset.path);
   const cleanOutput = sanitizePath(outputPath);
   if (pathsMatch(inputPath, cleanOutput)) {
@@ -63,7 +64,7 @@ export const runPixelsortJob = async (
   }
   const jobId = createJobId();
 
-  debug("runPixelsortJob start: input=%s output=%s", inputPath, cleanOutput);
+  debug("runModuloMappingJob start: input=%s output=%s", inputPath, cleanOutput);
 
   const metadata = await probeVideo(inputPath);
   const safeFps = resolveNativeFps(metadata.avgFps, metadata.nominalFps);
@@ -97,19 +98,19 @@ export const runPixelsortJob = async (
         resolvedProfile.sizeCapMb !== undefined));
   if (wantsTwoPass) {
     callbacks.onLog(
-      "VP9 two-pass is not supported for pixel sort yet. Using single-pass output."
+      "VP9 two-pass is not supported for modulo mapping yet. Using single-pass output."
     );
   }
   callbacks.onProgress({ percent: 0 });
 
   const stopListening = await attachNativeJobListeners(
     jobId,
-    PIXELSORT_EVENTS,
+    MODULO_MAPPING_EVENTS,
     callbacks
   );
   let canceled = false;
 
-  const runPromise = invoke("pixelsort_process", {
+  const runPromise = invoke("modulo_mapping_process", {
     jobId,
     inputPath,
     outputPath: cleanOutput,
@@ -133,8 +134,8 @@ export const runPixelsortJob = async (
     })
     .catch((error) => {
       const message =
-        error instanceof Error ? error.message : String(error ?? "Pixel sort failed");
-      debug("pixelsort failed: %O", error);
+        error instanceof Error ? error.message : String(error ?? "Modulo mapping failed");
+      debug("modulo-mapping failed: %O", error);
       if (!canceled && !isCancelError(message)) {
         callbacks.onError(message);
       }
@@ -150,9 +151,9 @@ export const runPixelsortJob = async (
     cancel: async () => {
       canceled = true;
       try {
-        await invoke("pixelsort_cancel", { jobId });
+        await invoke("modulo_mapping_cancel", { jobId });
       } catch (error) {
-        debug("pixelsort cancel failed: %O", error);
+        debug("modulo-mapping cancel failed: %O", error);
       }
     }
   };

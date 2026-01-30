@@ -8,6 +8,7 @@ import {
 } from "@/jobs/output";
 import { runDatamoshJob } from "@/jobs/datamoshRunner";
 import { runPixelsortJob } from "@/jobs/pixelsortRunner";
+import { runModuloMappingJob } from "@/jobs/byteRangeRunner";
 import { normalizeTrimRange, type TrimRange } from "@/jobs/trim";
 import {
   SAFE_SCALE_FILTER,
@@ -34,6 +35,10 @@ import {
   defaultPixelsortConfig,
   type PixelsortConfig
 } from "@/modes/pixelsort";
+import {
+  defaultModuloMappingConfig,
+  type ModuloMappingConfig
+} from "@/modes/moduloMapping";
 import type { JobProgress } from "@/jobs/types";
 import {
   buildVideoEncodingArgs,
@@ -274,6 +279,22 @@ export const runFfmpegJob = async (
       outputPath,
       options.durationSeconds,
       pixelsortConfig,
+      profile,
+      options.trimStartSeconds,
+      options.trimEndSeconds,
+      callbacks
+    );
+  }
+  if (activeMode.runner === "modulo-mapping") {
+    const moduloConfig = (options.modeConfig as ModuloMappingConfig | undefined) ?? {
+      ...defaultModuloMappingConfig
+    };
+    debug("delegating to modulo mapping pipeline");
+    return runModuloMappingJob(
+      asset,
+      outputPath,
+      options.durationSeconds,
+      moduloConfig,
       profile,
       options.trimStartSeconds,
       options.trimEndSeconds,

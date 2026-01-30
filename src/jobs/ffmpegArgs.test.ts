@@ -4,7 +4,8 @@ import {
   SAFE_SCALE_FILTER,
   getExtension,
   buildAudioArgs,
-  buildContainerArgs
+  buildContainerArgs,
+  parseExtraArgs
 } from "@/jobs/ffmpegArgs";
 
 describe("ffmpegArgs", () => {
@@ -40,5 +41,22 @@ describe("ffmpegArgs", () => {
     expect(getExtension("clip.MP4")).toBe("mp4");
     expect(getExtension("  /tmp/clip.m4v  ")).toBe("m4v");
     expect(getExtension("no-extension")).toBe("");
+  });
+
+  it("filters extra args to the safe allowlist", () => {
+    const raw = "-tune film -vf hue=s=0 -profile:v high -g 60 -nope 123";
+    expect(parseExtraArgs(raw)).toEqual([
+      "-tune",
+      "film",
+      "-profile:v",
+      "high",
+      "-g",
+      "60"
+    ]);
+  });
+
+  it("preserves quoted values for extra args", () => {
+    const raw = "-tune \"film\" -movflags \"+faststart\"";
+    expect(parseExtraArgs(raw)).toEqual(["-tune", "film", "-movflags", "+faststart"]);
   });
 });

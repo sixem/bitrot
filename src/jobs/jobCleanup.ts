@@ -14,12 +14,13 @@ type CleanupEntry = {
 const debug = makeDebug("jobs:cleanup");
 const activeEntries = new Map<string, CleanupEntry>();
 
-const buildPixelsortTempPath = (outputPath: string) => {
+const buildNativeTempPath = (outputPath: string, tag: string) => {
   const { folder, fileName, separator } = splitOutputPath(outputPath);
   const dotIndex = fileName.lastIndexOf(".");
-  const stem = dotIndex > 0 ? fileName.slice(0, dotIndex) : fileName || "pixelsort";
+  const stem = dotIndex > 0 ? fileName.slice(0, dotIndex) : fileName || "native";
   const extension = dotIndex > 0 ? fileName.slice(dotIndex + 1) : "mp4";
-  const tempFile = `${stem}.pixelsort.video.${extension}`;
+  const safeTag = tag.replace(/[^a-z0-9-]+/gi, "-");
+  const tempFile = `${stem}.${safeTag}.video.${extension}`;
   return joinOutputPath(folder, tempFile, separator);
 };
 
@@ -30,7 +31,9 @@ const buildCleanupEntry = (outputPath: string, modeId?: ModeId): CleanupEntry =>
     const temps = getDatamoshTempPaths(outputPath);
     tempPaths.push(temps.tempPath, temps.rawPath, temps.moshedPath, temps.remuxPath);
   } else if (mode.runner === "pixelsort") {
-    tempPaths.push(buildPixelsortTempPath(outputPath));
+    tempPaths.push(buildNativeTempPath(outputPath, "pixelsort"));
+  } else if (mode.runner === "modulo-mapping") {
+    tempPaths.push(buildNativeTempPath(outputPath, "modulo-mapping"));
   }
 
   return {

@@ -17,7 +17,7 @@ export type JobState = {
   status: JobStatus;
   progress: JobProgress;
   outputPath?: string;
-  // Optional runner-provided id for scoping event streams (e.g. pixelsort previews).
+  // Optional runner-provided id for scoping event streams (e.g. native previews).
   jobId?: string;
   error?: string;
 };

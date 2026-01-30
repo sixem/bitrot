@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { getCurrentWindow, ProgressBarStatus } from "@tauri-apps/api/window";
 import type { VideoAsset } from "@/domain/video";
 import type { VideoMetadata } from "@/system/ffprobe";
