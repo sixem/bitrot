@@ -167,6 +167,7 @@ pub fn run() {
     .plugin(tauri_plugin_dialog::init())
     .plugin(tauri_plugin_shell::init())
     .manage(pixelsort::PixelsortJobs::default())
+    .manage(pixelsort::PreviewBuffers::default())
     .manage(ffmpeg_jobs::FfmpegJobs::default())
     .invoke_handler(tauri::generate_handler![
       datamosh_bitstream,
@@ -182,7 +183,10 @@ pub fn run() {
       file_size,
       pixelsort::pixelsort_process,
       pixelsort::pixelsort_cancel,
-      pixelsort::pixelsort_preview
+      pixelsort::pixelsort_preview_start,
+      pixelsort::pixelsort_preview_append,
+      pixelsort::pixelsort_preview_finish,
+      pixelsort::pixelsort_preview_discard
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");

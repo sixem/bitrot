@@ -49,6 +49,91 @@ impl PixelsortJobs {
   }
 }
 
+// Holds chunked preview buffers so large RGBA payloads can arrive safely over IPC.
+#[derive(Default)]
+pub struct PreviewBuffers(Mutex<HashMap<String, PreviewBuffer>>);
+
+struct PreviewBuffer {
+  width: u32,
+  height: u32,
+  expected_len: usize,
+  data: Vec<u8>,
+  last_updated: Instant
+}
+
+// Drop stale uploads so aborted previews do not leak memory.
+const PREVIEW_BUFFER_TTL: Duration = Duration::from_secs(30);
+
+impl PreviewBuffers {
+  fn start(
+    &self,
+    preview_id: &str,
+    width: u32,
+    height: u32,
+    expected_len: usize
+  ) -> Result<(), String> {
+    let mut lock = self
+      .0
+      .lock()
+      .unwrap_or_else(|error| error.into_inner());
+    Self::prune_stale(&mut lock);
+    if lock.contains_key(preview_id) {
+      return Err("Preview upload already exists.".into());
+    }
+    lock.insert(
+      preview_id.to_string(),
+      PreviewBuffer {
+        width,
+        height,
+        expected_len,
+        data: Vec::with_capacity(expected_len),
+        last_updated: Instant::now()
+      }
+    );
+    Ok(())
+  }
+
+  fn append(&self, preview_id: &str, chunk: Vec<u8>) -> Result<(), String> {
+    let mut lock = self
+      .0
+      .lock()
+      .unwrap_or_else(|error| error.into_inner());
+    let buffer = lock
+      .get_mut(preview_id)
+      .ok_or_else(|| "Preview upload not found.".to_string())?;
+    if buffer.data.len() + chunk.len() > buffer.expected_len {
+      lock.remove(preview_id);
+      return Err("Preview buffer overflow.".into());
+    }
+    buffer.data.extend_from_slice(&chunk);
+    buffer.last_updated = Instant::now();
+    Ok(())
+  }
+
+  fn finish(&self, preview_id: &str) -> Result<PreviewBuffer, String> {
+    let mut lock = self
+      .0
+      .lock()
+      .unwrap_or_else(|error| error.into_inner());
+    lock
+      .remove(preview_id)
+      .ok_or_else(|| "Preview upload not found.".to_string())
+  }
+
+  fn discard(&self, preview_id: &str) {
+    let mut lock = self
+      .0
+      .lock()
+      .unwrap_or_else(|error| error.into_inner());
+    lock.remove(preview_id);
+  }
+
+  fn prune_stale(lock: &mut HashMap<String, PreviewBuffer>) {
+    let now = Instant::now();
+    lock.retain(|_, buffer| now.duration_since(buffer.last_updated) <= PREVIEW_BUFFER_TTL);
+  }
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PixelsortConfig {
@@ -66,7 +151,14 @@ pub struct PixelsortEncoding {
   pub preset: String,
   pub crf: Option<u32>,
   pub cq: Option<u32>,
-  pub max_bitrate_kbps: Option<u32>
+  pub max_bitrate_kbps: Option<u32>,
+  pub target_bitrate_kbps: Option<u32>,
+  pub vp9_deadline: Option<String>,
+  pub vp9_cpu_used: Option<u8>,
+  pub format: String,
+  pub audio_enabled: bool,
+  pub audio_codec: Option<String>,
+  pub audio_bitrate_kbps: Option<u32>
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -102,6 +194,20 @@ struct PixelsortPreviewEvent {
 #[serde(rename_all = "camelCase")]
 pub struct PixelsortPreviewResponse {
   path: String
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct PixelsortPreviewDebug {
+  stage: String,
+  preview_id: String,
+  width: Option<u32>,
+  height: Option<u32>,
+  expected_len: Option<usize>,
+  received_len: Option<usize>,
+  chunk_len: Option<usize>,
+  chunk_index: Option<usize>,
+  message: Option<String>
 }
 
 #[derive(Clone, Copy)]
@@ -163,6 +269,43 @@ fn emit_preview(window: &Window, job_id: &str, frame: u64, path: &Path) {
     path: path.to_string_lossy().into_owned()
   };
   let _ = window.emit("pixelsort-preview", payload);
+}
+
+// Gate preview debug logs behind an env var so the default output stays clean.
+fn preview_debug_enabled() -> bool {
+  std::env::var("BITROT_PREVIEW_DEBUG")
+    .map(|value| value != "0")
+    .unwrap_or(false)
+}
+
+fn emit_preview_debug(app: &AppHandle, payload: PixelsortPreviewDebug) {
+  if !preview_debug_enabled() {
+    return;
+  }
+  let _ = app.emit("pixelsort-preview-debug", payload.clone());
+  let mut parts = vec![
+    format!("stage={}", payload.stage),
+    format!("previewId={}", payload.preview_id)
+  ];
+  if let (Some(width), Some(height)) = (payload.width, payload.height) {
+    parts.push(format!("size={width}x{height}"));
+  }
+  if let Some(expected) = payload.expected_len {
+    parts.push(format!("expected={expected}"));
+  }
+  if let Some(received) = payload.received_len {
+    parts.push(format!("received={received}"));
+  }
+  if let Some(chunk_len) = payload.chunk_len {
+    parts.push(format!("chunk={chunk_len}"));
+  }
+  if let Some(chunk_index) = payload.chunk_index {
+    parts.push(format!("chunkIndex={chunk_index}"));
+  }
+  if let Some(message) = payload.message {
+    parts.push(format!("msg={message}"));
+  }
+  eprintln!("[pixelsort-preview] {}", parts.join(" "));
 }
 
 fn luma(r: u8, g: u8, b: u8) -> u8 {
@@ -814,13 +957,22 @@ fn apply_grade_noise(
   }
 }
 
-fn build_temp_video_path(output_path: &str) -> PathBuf {
+fn build_temp_video_path(output_path: &str, format: &str) -> PathBuf {
   let output = PathBuf::from(output_path);
   let stem = output
     .file_stem()
     .and_then(|value| value.to_str())
     .unwrap_or("pixelsort");
-  let file_name = format!("{stem}.pixelsort.video.mp4");
+  let clean_format = format
+    .trim()
+    .trim_start_matches('.')
+    .to_lowercase();
+  let extension = if clean_format.is_empty() {
+    "mp4".to_string()
+  } else {
+    clean_format
+  };
+  let file_name = format!("{stem}.pixelsort.video.{extension}");
   output.with_file_name(file_name)
 }
 
@@ -869,6 +1021,17 @@ fn resolve_preview_size(width: u32, height: u32) -> (u32, u32) {
   (scaled_width, scaled_height)
 }
 
+// Validates preview dimensions and returns the expected RGBA byte length.
+fn preview_expected_len(width: u32, height: u32) -> Result<usize, String> {
+  if width < 2 || height < 2 {
+    return Err("Preview dimensions are invalid.".into());
+  }
+  (width as usize)
+    .checked_mul(height as usize)
+    .and_then(|value| value.checked_mul(4))
+    .ok_or_else(|| "Preview dimensions are too large.".to_string())
+}
+
 // Simple nearest-neighbor resize for preview buffers.
 fn downscale_rgba_nearest(
   src: &[u8],
@@ -892,13 +1055,6 @@ fn downscale_rgba_nearest(
     }
   }
   dst
-}
-
-fn build_preview_raw_path(tag: &str) -> PathBuf {
-  let safe_tag = tag.replace(|c: char| !c.is_ascii_alphanumeric(), "_");
-  let nonce = build_preview_nonce();
-  let file_name = format!("bitrot-preview-{safe_tag}-{nonce}.rgba");
-  std::env::temp_dir().join(file_name)
 }
 
 // Normalizes paths for comparison without touching the filesystem.
@@ -950,55 +1106,7 @@ fn push_trim_args(args: &mut Vec<String>, trim: Option<(f64, f64)>) {
   }
 }
 
-// Use accurate seeks for previews to match the paused frame.
-fn build_preview_decode_args(
-  input_path: &str,
-  time_seconds: f64,
-  keyframe_seconds: Option<f64>,
-  width: u32,
-  height: u32,
-  output_path: &PathBuf
-) -> Vec<String> {
-  let target = time_seconds.max(0.0);
-  let anchor = keyframe_seconds.filter(|value| value.is_finite() && *value >= 0.0);
-  let pre_seek = anchor.filter(|value| *value <= target);
-  let post_seek = pre_seek.map_or(target, |value| (target - value).max(0.0));
-
-  let mut args = vec![
-    "-y".into(),
-    "-hide_banner".into(),
-    "-loglevel".into(),
-    "error".into(),
-  ];
-
-  if let Some(value) = pre_seek {
-    // Fast seek to the nearest keyframe, then accurately seek within the GOP.
-    args.push("-ss".into());
-    args.push(format!("{value:.3}"));
-  }
-
-  args.extend([
-    "-i".into(),
-    input_path.into(),
-    "-map".into(),
-    "0:v:0".into(),
-    "-an".into(),
-    "-ss".into(),
-    format!("{post_seek:.3}"),
-    "-frames:v".into(),
-    "1".into(),
-    "-vf".into(),
-    format!("scale={width}:{height},setsar=1,format=rgba"),
-    "-f".into(),
-    "rawvideo".into(),
-    "-pix_fmt".into(),
-    "rgba".into(),
-    output_path.to_string_lossy().into_owned()
-  ]);
-
-  args
-}
-
+// Preview encoding arguments for a single RGBA frame.
 fn build_preview_encode_args(width: u32, height: u32, output_path: &PathBuf) -> Vec<String> {
   vec![
     "-y".into(),
@@ -1030,6 +1138,11 @@ fn build_encode_args(
   encoding: &PixelsortEncoding,
   output_path: &PathBuf
 ) -> Vec<String> {
+  let format = encoding
+    .format
+    .trim()
+    .trim_start_matches('.')
+    .to_lowercase();
   let mut args = vec![
     "-y".into(),
     "-hide_banner".into(),
@@ -1061,6 +1174,28 @@ fn build_encode_args(
       "-b:v".into(),
       "0".into()
     ]);
+  } else if encoding.encoder == "libvpx-vp9" {
+    let deadline = encoding
+      .vp9_deadline
+      .clone()
+      .unwrap_or_else(|| "good".into());
+    let cpu_used = encoding.vp9_cpu_used.unwrap_or(4);
+    args.extend([
+      "-c:v".into(),
+      "libvpx-vp9".into(),
+      "-deadline".into(),
+      deadline,
+      "-cpu-used".into(),
+      cpu_used.to_string(),
+      "-row-mt".into(),
+      "1".into()
+    ]);
+    if let Some(target_bitrate) = encoding.target_bitrate_kbps {
+      args.extend(["-b:v".into(), format!("{target_bitrate}k")]);
+    } else {
+      let crf = encoding.crf.unwrap_or(30);
+      args.extend(["-crf".into(), crf.to_string(), "-b:v".into(), "0".into()]);
+    }
   } else {
     let crf = encoding.crf.unwrap_or(20);
     args.extend([
@@ -1074,24 +1209,31 @@ fn build_encode_args(
   }
 
   if let Some(max_bitrate) = encoding.max_bitrate_kbps {
-    // Apply a VBV cap to avoid runaway file sizes on high-variance frames.
-    let maxrate = max_bitrate.max(1200);
-    let bufsize = maxrate.saturating_mul(2);
-    args.extend([
-      "-maxrate".into(),
-      format!("{maxrate}k"),
-      "-bufsize".into(),
-      format!("{bufsize}k")
-    ]);
+    if encoding.encoder == "libvpx-vp9" {
+      // VP9 uses either a target bitrate or CRF with b:v=0. Adding VBV caps causes encoder errors.
+    } else {
+      // Apply a VBV cap to avoid runaway file sizes on high-variance frames.
+      let maxrate = max_bitrate.max(1200);
+      let bufsize = maxrate.saturating_mul(2);
+      args.extend([
+        "-maxrate".into(),
+        format!("{maxrate}k"),
+        "-bufsize".into(),
+        format!("{bufsize}k")
+      ]);
+    }
   }
 
-  args.extend([
-    "-pix_fmt".into(),
-    "yuv420p".into(),
-    "-movflags".into(),
-    "+faststart".into(),
-    output_path.to_string_lossy().into_owned()
-  ]);
+  let mut container_args = Vec::new();
+  if format == "mp4" || format == "m4v" || format == "mov" {
+    container_args.extend(["-movflags".into(), "+faststart".into()]);
+  }
+
+  args.extend(["-pix_fmt".into(), "yuv420p".into()]);
+  if !container_args.is_empty() {
+    args.extend(container_args);
+  }
+  args.push(output_path.to_string_lossy().into_owned());
 
   args
 }
@@ -1129,7 +1271,8 @@ fn build_mux_args(
   temp_video: &PathBuf,
   input_path: &str,
   output_path: &str,
-  trim: Option<(f64, f64)>
+  trim: Option<(f64, f64)>,
+  encoding: &PixelsortEncoding
 ) -> Vec<String> {
   let mut args = vec![
     "-y".into(),
@@ -1140,24 +1283,48 @@ fn build_mux_args(
     temp_video.to_string_lossy().into_owned()
   ];
   push_trim_args(&mut args, trim);
-  args.extend([
-    "-i".into(),
-    input_path.into(),
-    "-map".into(),
-    "0:v:0".into(),
-    "-map".into(),
-    "1:a?".into(),
-    "-c:v".into(),
-    "copy".into(),
-    "-c:a".into(),
-    "aac".into(),
-    "-b:a".into(),
-    "192k".into(),
-    "-shortest".into(),
-    "-movflags".into(),
-    "+faststart".into(),
-    output_path.into()
-  ]);
+
+  if encoding.audio_enabled {
+    args.extend([
+      "-i".into(),
+      input_path.into(),
+      "-map".into(),
+      "0:v:0".into(),
+      "-map".into(),
+      "1:a?".into()
+    ]);
+  } else {
+    args.extend(["-map".into(), "0:v:0".into(), "-an".into()]);
+  }
+
+  args.extend(["-c:v".into(), "copy".into()]);
+  if encoding.audio_enabled {
+    let codec = encoding
+      .audio_codec
+      .as_deref()
+      .unwrap_or("aac")
+      .to_lowercase();
+    if codec == "opus" {
+      args.extend(["-c:a".into(), "libopus".into()]);
+    } else if codec == "copy" {
+      args.extend(["-c:a".into(), "copy".into()]);
+    } else {
+      args.extend(["-c:a".into(), "aac".into()]);
+    }
+    let bitrate = encoding.audio_bitrate_kbps.unwrap_or(192);
+    args.extend(["-b:a".into(), format!("{bitrate}k"), "-shortest".into()]);
+  }
+
+  let format = encoding
+    .format
+    .trim()
+    .trim_start_matches('.')
+    .to_lowercase();
+  if format == "mp4" || format == "m4v" || format == "mov" {
+    args.extend(["-movflags".into(), "+faststart".into()]);
+  }
+
+  args.push(output_path.into());
   args
 }
 
@@ -1199,46 +1366,6 @@ async fn wait_for_exit(
   Ok((code.unwrap_or(-1), errors))
 }
 
-async fn decode_preview_frame(
-  app: &AppHandle,
-  input_path: &str,
-  time_seconds: f64,
-  keyframe_seconds: Option<f64>,
-  width: u32,
-  height: u32
-) -> Result<Vec<u8>, String> {
-  let output_path = build_preview_raw_path("manual");
-  let args =
-    build_preview_decode_args(input_path, time_seconds, keyframe_seconds, width, height, &output_path);
-  let output = resolve_ffmpeg_command(app, "ffmpeg")?
-    .args(args)
-    .output()
-    .await
-    .map_err(|error| error.to_string())?;
-  if !output.status.success() {
-    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-    let _ = std::fs::remove_file(&output_path);
-    return Err(stderr);
-  }
-  let buffer = std::fs::read(&output_path)
-    .map_err(|error| format!("Preview read failed: {error}"))?;
-  let _ = std::fs::remove_file(&output_path);
-  let frame_size = (width as usize) * (height as usize) * 4;
-  if buffer.len() < frame_size {
-    return Err(format!(
-      "Preview frame decode size mismatch (expected {frame_size} bytes, got {}).",
-      buffer.len()
-    ));
-  }
-  if buffer.len() == frame_size {
-    return Ok(buffer);
-  }
-
-  let usable = buffer.len() - (buffer.len() % frame_size);
-  let start = usable.saturating_sub(frame_size);
-  Ok(buffer[start..start + frame_size].to_vec())
-}
-
 async fn encode_preview_frame(
   app: &AppHandle,
   frame: &[u8],
@@ -1266,6 +1393,51 @@ async fn encode_preview_frame(
     });
   }
   Ok(())
+}
+
+// Processes RGBA bytes into a pixelsorted PNG and returns the output path.
+async fn render_pixelsort_preview(
+  app: &AppHandle,
+  width: u32,
+  height: u32,
+  frame: &[u8],
+  config: &PixelsortConfig
+) -> Result<PixelsortPreviewResponse, String> {
+  let expected = preview_expected_len(width, height)?;
+  if frame.len() < expected {
+    return Err(format!(
+      "Preview buffer size mismatch (expected {expected} bytes, got {}).",
+      frame.len()
+    ));
+  }
+
+  let mut workspace = FrameWorkspace::new(width as usize, height as usize);
+  let processed = pixelsort_frame(&frame[..expected], &mut workspace, config, 0);
+  let (preview_width, preview_height) = resolve_preview_size(width, height);
+
+  let preview_path = build_preview_unique_path("manual");
+  let encode_result = if preview_width == width && preview_height == height {
+    encode_preview_frame(app, processed, width, height, &preview_path).await
+  } else {
+    let preview_frame =
+      downscale_rgba_nearest(processed, width, height, preview_width, preview_height);
+    encode_preview_frame(
+      app,
+      &preview_frame,
+      preview_width,
+      preview_height,
+      &preview_path
+    )
+    .await
+  };
+  if let Err(error) = encode_result {
+    cleanup_file(&preview_path);
+    return Err(error);
+  }
+
+  Ok(PixelsortPreviewResponse {
+    path: preview_path.to_string_lossy().into_owned()
+  })
 }
 
 async fn read_until_terminated(
@@ -1307,59 +1479,153 @@ pub async fn pixelsort_cancel(
   }
 }
 
+// Chunked manual preview uploads keep IPC payloads well under size limits.
 #[tauri::command]
-pub async fn pixelsort_preview(
+pub fn pixelsort_preview_start(
   app: AppHandle,
-  input_path: String,
-  time_seconds: f64,
-  keyframe_seconds: Option<f64>,
+  preview_id: String,
   width: u32,
   height: u32,
-  config: PixelsortConfig
-) -> Result<PixelsortPreviewResponse, String> {
-  if input_path.trim().is_empty() {
-    return Err("Preview input path is missing.".into());
-  }
-
-  if width < 2 || height < 2 {
-    return Err("Preview dimensions are invalid.".into());
-  }
-
-  let safe_width = if width % 2 == 0 { width } else { width - 1 };
-  let safe_height = if height % 2 == 0 { height } else { height - 1 };
-
-  let frame = decode_preview_frame(
+  state: State<'_, PreviewBuffers>
+) -> Result<(), String> {
+  let expected_len = preview_expected_len(width, height)?;
+  let result = state.start(&preview_id, width, height, expected_len);
+  emit_preview_debug(
     &app,
-    &input_path,
-    time_seconds,
-    keyframe_seconds,
-    safe_width,
-    safe_height
-  )
-    .await?;
-  let mut workspace = FrameWorkspace::new(safe_width as usize, safe_height as usize);
-  let processed = pixelsort_frame(&frame, &mut workspace, &config, 0);
-  let (preview_width, preview_height) = resolve_preview_size(safe_width, safe_height);
-  let preview_frame = downscale_rgba_nearest(
-    processed,
-    safe_width,
-    safe_height,
-    preview_width,
-    preview_height
+    PixelsortPreviewDebug {
+      stage: "start".into(),
+      preview_id,
+      width: Some(width),
+      height: Some(height),
+      expected_len: Some(expected_len),
+      received_len: Some(0),
+      chunk_len: None,
+      chunk_index: None,
+      message: result.as_ref().err().cloned()
+    }
   );
+  result
+}
 
-  let preview_path = build_preview_unique_path("manual");
-  if let Err(error) =
-    encode_preview_frame(&app, &preview_frame, preview_width, preview_height, &preview_path)
-      .await
-  {
-    cleanup_file(&preview_path);
-    return Err(error);
+#[tauri::command]
+pub fn pixelsort_preview_append(
+  app: AppHandle,
+  preview_id: String,
+  chunk: Vec<u8>,
+  state: State<'_, PreviewBuffers>
+) -> Result<(), String> {
+  if chunk.is_empty() {
+    return Ok(());
   }
+  let chunk_len = chunk.len();
+  state.append(&preview_id, chunk)?;
+  emit_preview_debug(
+    &app,
+    PixelsortPreviewDebug {
+      stage: "append".into(),
+      preview_id,
+      width: None,
+      height: None,
+      expected_len: None,
+      received_len: None,
+      chunk_len: Some(chunk_len),
+      chunk_index: None,
+      message: None
+    }
+  );
+  Ok(())
+}
 
-  Ok(PixelsortPreviewResponse {
-    path: preview_path.to_string_lossy().into_owned()
-  })
+#[tauri::command]
+pub async fn pixelsort_preview_finish(
+  app: AppHandle,
+  preview_id: String,
+  config: PixelsortConfig,
+  state: State<'_, PreviewBuffers>
+) -> Result<PixelsortPreviewResponse, String> {
+  let buffer = state.finish(&preview_id)?;
+  if buffer.data.len() != buffer.expected_len {
+    let message = format!(
+      "Preview buffer size mismatch (expected {} bytes, got {}).",
+      buffer.expected_len,
+      buffer.data.len()
+    );
+    emit_preview_debug(
+      &app,
+      PixelsortPreviewDebug {
+        stage: "finish".into(),
+        preview_id,
+        width: Some(buffer.width),
+        height: Some(buffer.height),
+      expected_len: Some(buffer.expected_len),
+      received_len: Some(buffer.data.len()),
+      chunk_len: None,
+      chunk_index: None,
+      message: Some(message.clone())
+    }
+  );
+  return Err(message);
+  }
+  emit_preview_debug(
+    &app,
+    PixelsortPreviewDebug {
+      stage: "finish".into(),
+      preview_id: preview_id.clone(),
+      width: Some(buffer.width),
+      height: Some(buffer.height),
+    expected_len: Some(buffer.expected_len),
+    received_len: Some(buffer.data.len()),
+    chunk_len: None,
+    chunk_index: None,
+    message: None
+  }
+  );
+  let result =
+    render_pixelsort_preview(&app, buffer.width, buffer.height, &buffer.data, &config)
+      .await;
+  let render_message = match &result {
+    Ok(response) => Some(format!("ok path={}", response.path)),
+    Err(error) => Some(error.clone())
+  };
+  emit_preview_debug(
+    &app,
+    PixelsortPreviewDebug {
+      stage: "render".into(),
+      preview_id,
+      width: Some(buffer.width),
+      height: Some(buffer.height),
+    expected_len: Some(buffer.expected_len),
+    received_len: Some(buffer.data.len()),
+    chunk_len: None,
+    chunk_index: None,
+    message: render_message
+  }
+  );
+  result
+}
+
+#[tauri::command]
+pub fn pixelsort_preview_discard(
+  app: AppHandle,
+  preview_id: String,
+  state: State<'_, PreviewBuffers>
+) -> Result<(), String> {
+  state.discard(&preview_id);
+  emit_preview_debug(
+    &app,
+    PixelsortPreviewDebug {
+      stage: "discard".into(),
+      preview_id,
+      width: None,
+      height: None,
+      expected_len: None,
+      received_len: None,
+      chunk_len: None,
+      chunk_index: None,
+      message: None
+    }
+  );
+  Ok(())
 }
 
 #[tauri::command]
@@ -1409,7 +1675,7 @@ pub async fn pixelsort_process(
   }
 
   let output_path_buf = PathBuf::from(&output_path);
-  let temp_video = build_temp_video_path(&output_path);
+  let temp_video = build_temp_video_path(&output_path, &encoding.format);
   let frame_size = (safe_width as usize) * (safe_height as usize) * 4;
   let trim_range = normalize_trim_range(trim_start_seconds, trim_end_seconds);
   let duration_for_progress = trim_range
@@ -1649,7 +1915,7 @@ pub async fn pixelsort_process(
 
   if let Err(error) = run_ffmpeg_output(
     &app,
-    build_mux_args(&temp_video, &input_path, &output_path, trim_range)
+    build_mux_args(&temp_video, &input_path, &output_path, trim_range, &encoding)
   )
   .await
   {
