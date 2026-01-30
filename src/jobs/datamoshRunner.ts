@@ -27,6 +27,7 @@ import {
   type CommandSource
 } from "@/system/shellCommand";
 import { sanitizePath } from "@/system/path";
+import { cleanupFiles } from "@/system/cleanup";
 import makeDebug from "@/utils/debug";
 
 type DatamoshCallbacks = {
@@ -358,11 +359,8 @@ const buildCompatibilityTranscodeArgs = (
 };
 
 const cleanupTemps = async (paths: string[]) => {
-  try {
-    await invoke("cleanup_files", { paths });
-  } catch {
-    // Best-effort cleanup; ignore failures.
-  }
+  // Best-effort cleanup; ignore failures.
+  await cleanupFiles(paths, "datamosh temps");
 };
 
 const emitCommandOutput = (

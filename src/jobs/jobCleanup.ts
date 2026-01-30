@@ -1,7 +1,7 @@
-import { invoke } from "@tauri-apps/api/core";
 import { getModeDefinition, type ModeId } from "@/modes/definitions";
 import { splitOutputPath, joinOutputPath } from "@/jobs/output";
 import { getDatamoshTempPaths } from "@/jobs/datamoshRunner";
+import { cleanupFiles } from "@/system/cleanup";
 import makeDebug from "@/utils/debug";
 
 type CleanupEntry = {
@@ -38,30 +38,12 @@ const buildCleanupEntry = (outputPath: string, modeId?: ModeId): CleanupEntry =>
   };
 };
 
-const uniquePaths = (paths: string[]) => {
-  const seen = new Set<string>();
-  return paths.filter((path) => {
-    const trimmed = path.trim();
-    if (!trimmed || seen.has(trimmed)) {
-      return false;
-    }
-    seen.add(trimmed);
-    return true;
-  });
-};
-
 const cleanupPaths = async (paths: string[]) => {
-  const sanitized = uniquePaths(paths);
-  if (sanitized.length === 0) {
-    return true;
+  const success = await cleanupFiles(paths, "job cleanup");
+  if (!success) {
+    debug("cleanup failed");
   }
-  try {
-    await invoke("cleanup_files", { paths: sanitized });
-    return true;
-  } catch (error) {
-    debug("cleanup failed: %O", error);
-    return false;
-  }
+  return success;
 };
 
 export const registerJobCleanup = (outputPath: string, modeId?: ModeId) => {
