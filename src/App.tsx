@@ -4,11 +4,13 @@ import Editor from "@/editor/Editor";
 import { createVideoAssetFromPath, type VideoAsset } from "@/domain/video";
 import FfmpegGate from "@/components/FfmpegGate";
 import useFfmpegStatus from "@/system/useFfmpegStatus";
+import useAppCleanup from "@/system/useAppCleanup";
 import ModalProvider from "@/ui/modal/ModalProvider";
 import ToastProvider from "@/ui/toast/ToastProvider";
 
 // Root app component. Keep this small so layouts stay swappable later.
 const App = () => {
+  useAppCleanup();
   const { status, refresh, isReady } = useFfmpegStatus();
   const [asset, setAsset] = useState<VideoAsset | null>(null);
   const handleVideoSelected = useCallback((path: string) => {
