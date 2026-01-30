@@ -224,19 +224,13 @@ impl FrameWorkspace {
     }
   }
 
-  // Ensures the segment buffer can hold the largest segment we might sort.
-  fn ensure_segment_capacity(&mut self, needed: usize) {
-    if self.segment_indices.capacity() < needed {
-      self.segment_indices.reserve(needed - self.segment_indices.capacity());
-    }
-  }
-
 
   fn output(&self) -> &[u8] {
     &self.output
   }
 }
 
+// Ensures the segment buffer can hold the largest segment we might sort.
 fn ensure_segment_capacity(segment_indices: &mut Vec<usize>, needed: usize) {
   if segment_indices.capacity() < needed {
     segment_indices.reserve(needed - segment_indices.capacity());
@@ -678,7 +672,10 @@ fn pixelsort_frame<'a>(
   let width = workspace.width;
   let height = workspace.height;
   let block_capacity = block_size.saturating_mul(block_size);
-  workspace.ensure_segment_capacity(width.max(height).max(block_capacity));
+  ensure_segment_capacity(
+    &mut workspace.segment_indices,
+    width.max(height).max(block_capacity)
+  );
 
   if strength > 0.001 {
     match parse_direction(config.direction.as_str()) {
