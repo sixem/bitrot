@@ -20,7 +20,8 @@ const initialProgress: JobProgress = {
 
 const initialState: JobState = {
   status: "idle",
-  progress: initialProgress
+  progress: initialProgress,
+  jobId: undefined
 };
 
 const debug = makeDebug("jobs:ffmpeg");
@@ -42,6 +43,7 @@ const resetProgressState = (status: JobState["status"], outputPath?: string) => 
   status,
   progress: initialProgress,
   outputPath,
+  jobId: undefined,
   error: undefined
 });
 
@@ -93,6 +95,7 @@ const useFfmpegJob = () => {
         status: "running",
         progress: initialProgress,
         outputPath: resolvedOutputPath,
+        jobId: undefined,
         error: undefined
       });
       await setTaskbarProgress(ProgressBarStatus.Normal, 0);
@@ -150,6 +153,7 @@ const useFfmpegJob = () => {
               setJob((prev) => ({
                 ...prev,
                 status: "error",
+                jobId: undefined,
                 error: errorWithTail
               }));
             },
@@ -170,6 +174,7 @@ const useFfmpegJob = () => {
                   : code === 0
                     ? "success"
                     : "error",
+                jobId: undefined,
                 error:
                   cancelRef.current || code === 0
                     ? undefined
@@ -190,7 +195,11 @@ const useFfmpegJob = () => {
           registerJobCleanup(handle.outputPath, modeId);
         }
         cleanupPathRef.current = handle.outputPath;
-        setJob((prev) => ({ ...prev, outputPath: handle.outputPath }));
+        setJob((prev) => ({
+          ...prev,
+          outputPath: handle.outputPath,
+          jobId: handle.jobId
+        }));
       } catch (error) {
         if (cleanupPathRef.current) {
           void cleanupJob(cleanupPathRef.current, { keepOutput: false });
@@ -201,6 +210,7 @@ const useFfmpegJob = () => {
         setJob((prev) => ({
           ...prev,
           status: "error",
+          jobId: undefined,
           error: message
         }));
       }

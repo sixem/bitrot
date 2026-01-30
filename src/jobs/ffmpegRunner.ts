@@ -3,6 +3,7 @@ import { createFfmpegProgressParser } from "@/jobs/ffmpegProgress";
 import { buildDefaultOutputPath, pathsMatch } from "@/jobs/output";
 import { runDatamoshJob } from "@/jobs/datamoshRunner";
 import { runPixelsortJob } from "@/jobs/pixelsortRunner";
+import { normalizeTrimRange, type TrimRange } from "@/jobs/trim";
 import {
   SAFE_SCALE_FILTER,
   buildAudioArgs,
@@ -58,28 +59,13 @@ type FfmpegRunCallbacks = {
 
 export type FfmpegRunHandle = {
   outputPath: string;
+  jobId?: string;
   cancel: () => Promise<void>;
 };
 
 const debug = makeDebug("jobs:runner");
 
-
-const normalizeTrimRange = (start?: number, end?: number) => {
-  if (typeof start !== "number" || typeof end !== "number") {
-    return undefined;
-  }
-  const safeStart = Math.max(0, start);
-  const safeEnd = Math.max(0, end);
-  if (!Number.isFinite(safeStart) || !Number.isFinite(safeEnd)) {
-    return undefined;
-  }
-  if (safeEnd <= safeStart) {
-    return undefined;
-  }
-  return { start: safeStart, end: safeEnd };
-};
-
-const buildTrimArgs = (range?: { start: number; end: number }) => {
+const buildTrimArgs = (range?: TrimRange) => {
   if (!range) {
     return [];
   }
@@ -306,6 +292,7 @@ export const runFfmpegJob = async (
 
   return {
     outputPath,
+    jobId: undefined,
     cancel: async () => {
       await child.kill();
     }

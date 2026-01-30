@@ -28,6 +28,7 @@ import {
 } from "@/system/shellCommand";
 import { sanitizePath } from "@/system/path";
 import { cleanupFiles } from "@/system/cleanup";
+import { normalizeTrimRange, type TrimRange } from "@/jobs/trim";
 import makeDebug from "@/utils/debug";
 
 type DatamoshCallbacks = {
@@ -35,11 +36,6 @@ type DatamoshCallbacks = {
   onLog: (line: string) => void;
   onClose: (code: number | null, signal: string | null) => void;
   onError: (message: string) => void;
-};
-
-type TrimRange = {
-  start: number;
-  end: number;
 };
 
 export type DatamoshRunHandle = {
@@ -51,21 +47,6 @@ const debug = makeDebug("jobs:datamosh");
 
 const MIN_GOP_SIZE = 30;
 const MAX_GOP_SIZE = 600;
-
-const normalizeTrimRange = (start?: number, end?: number) => {
-  if (typeof start !== "number" || typeof end !== "number") {
-    return undefined;
-  }
-  const safeStart = Math.max(0, start);
-  const safeEnd = Math.max(0, end);
-  if (!Number.isFinite(safeStart) || !Number.isFinite(safeEnd)) {
-    return undefined;
-  }
-  if (safeEnd <= safeStart) {
-    return undefined;
-  }
-  return { start: safeStart, end: safeEnd } satisfies TrimRange;
-};
 
 const buildTrimArgs = (trim?: TrimRange) => {
   if (!trim) {

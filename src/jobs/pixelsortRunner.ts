@@ -3,6 +3,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { VideoAsset } from "@/domain/video";
 import type { JobProgress } from "@/jobs/types";
 import { pathsMatch } from "@/jobs/output";
+import { normalizeTrimRange } from "@/jobs/trim";
 import { probeVideo } from "@/system/ffprobe";
 import {
   DEFAULT_ENCODING_ID,
@@ -23,6 +24,7 @@ type PixelsortCallbacks = {
 
 export type PixelsortRunHandle = {
   outputPath: string;
+  jobId: string;
   cancel: () => Promise<void>;
 };
 
@@ -44,34 +46,6 @@ type PixelsortLogPayload = {
 };
 
 const debug = makeDebug("jobs:pixelsort");
-
-type TrimRange = {
-  start: number;
-  end: number;
-};
-
-const normalizeTrimRange = (
-  start?: number,
-  end?: number,
-  duration?: number
-) => {
-  if (typeof start !== "number" || typeof end !== "number") {
-    return undefined;
-  }
-  const safeStart = Math.max(0, start);
-  const safeEnd = Math.max(0, end);
-  if (!Number.isFinite(safeStart) || !Number.isFinite(safeEnd)) {
-    return undefined;
-  }
-  if (safeEnd <= safeStart) {
-    return undefined;
-  }
-  const clampedEnd =
-    typeof duration === "number" && Number.isFinite(duration)
-      ? Math.min(safeEnd, duration)
-      : safeEnd;
-  return { start: safeStart, end: clampedEnd } satisfies TrimRange;
-};
 
 const createJobId = () =>
   `pixelsort-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
@@ -197,11 +171,9 @@ export const runPixelsortJob = async (
 
   const metadata = await probeVideo(inputPath);
   const safeFps = resolvePixelsortFps(metadata.avgFps, metadata.nominalFps);
-  const trimRange = normalizeTrimRange(
-    trimStartSeconds,
-    trimEndSeconds,
-    metadata.durationSeconds
-  );
+  const trimRange = normalizeTrimRange(trimStartSeconds, trimEndSeconds, {
+    durationSeconds: metadata.durationSeconds
+  });
   const resolvedDuration = trimRange
     ? Math.max(0, trimRange.end - trimRange.start)
     : metadata.durationSeconds ?? durationSeconds;
@@ -264,6 +236,7 @@ export const runPixelsortJob = async (
 
   return {
     outputPath: cleanOutput,
+    jobId,
     cancel: async () => {
       canceled = true;
       try {
