@@ -1,0 +1,8 @@
+// Surface utilities shared by cards, panels, menus, and code blocks.
+// Set --surface-* variables on a component before including the mixin.
+@mixin surface {
+  background: var(--surface-bg, #050505);
+  border: var(--surface-border, 1px solid var(--border));
+  border-radius: var(--surface-radius, var(--radius-lg));
+  box-shadow: var(--surface-shadow, none);
+}

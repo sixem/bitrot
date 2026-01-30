@@ -1,0 +1,105 @@
+@use "../theme" as theme;
+
+// Base layer: global tokens, font faces, resets, and document defaults.
+// Keeping these together makes global behavior easy to audit.
+
+@font-face {
+  font-family: "Cinzel";
+  src: url("./assets/fonts/cinzel/Cinzel-VariableFont_wght.ttf") format("truetype");
+  font-weight: 400 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  color-scheme: dark;
+  @include theme.theme-vars("midnight");
+  --title-font: "Cinzel", "Times New Roman", serif;
+  --body-font: "Space Grotesk", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --radius-lg: 8px;
+  --radius-md: 6px;
+  --radius-pill: 6px;
+}
+
+// Optional hook for swapping themes via data-theme on the root element.
+:root[data-theme="midnight"] {
+  @include theme.theme-vars("midnight");
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+button,
+input[type="range"],
+input[type="checkbox"],
+input[type="radio"],
+input[type="color"],
+input[type="file"],
+select {
+  user-select: none;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+::selection {
+  background: var(--tone-success-soft);
+  color: var(--accent-contrast);
+}
+
+*:focus,
+*:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--body-font);
+  letter-spacing: 0.01em;
+  line-height: 1.5;
+  user-select: none;
+  overflow-x: hidden;
+}
+
+input,
+textarea,
+select,
+option,
+[contenteditable="true"] {
+  user-select: text;
+}
+
+// Scrollbar styling is opt-in to avoid heavy global selector matching.
+.scrollable {
+  scrollbar-color: #1f1f1f #0b0b0b;
+  scrollbar-width: thin;
+}
+
+.scrollable::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.scrollable::-webkit-scrollbar-track {
+  background: #0b0b0b;
+}
+
+.scrollable::-webkit-scrollbar-thumb {
+  background: #1f1f1f;
+  border-radius: 999px;
+  border: 2px solid #0b0b0b;
+}
+
+.scrollable::-webkit-scrollbar-thumb:hover {
+  background: #2b2b2b;
+}

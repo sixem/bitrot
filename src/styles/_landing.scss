@@ -1,0 +1,228 @@
+@use "./surfaces" as surfaces;
+
+// Landing screen layout and copy treatments.
+
+.app {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 28px;
+  padding: 40px 20px 48px;
+  text-align: center;
+  position: relative;
+  overflow: hidden;
+
+  .app-content {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 36px;
+    transition: opacity 140ms ease, transform 140ms ease;
+    transform: scale(1);
+    transform-origin: center;
+  }
+
+  &[data-dragging="true"] {
+    .app-content {
+      opacity: 0.45;
+      transform: scale(0.985);
+    }
+  }
+}
+
+.hero,
+.drop-section {
+  width: min(720px, 100%);
+}
+
+.hero {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.version {
+  position: absolute;
+  top: -32px;
+  right: 0;
+  font-size: 0.75rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  padding: 6px 10px;
+  color: var(--muted);
+  background: rgba(0, 0, 0, 0.6);
+}
+
+.eyebrow {
+  margin: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.4em;
+  font-size: 0.7rem;
+  color: var(--muted-strong);
+}
+
+.title {
+  font-family: var(--title-font);
+  font-size: clamp(2.6rem, 5vw, 4.6rem);
+  font-weight: 600;
+  margin: 0;
+}
+
+.lede {
+  margin: 0;
+  font-size: 1.05rem;
+  color: var(--muted);
+}
+
+.drop-section {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  align-items: center;
+}
+
+.dropzone {
+  --surface-bg: #050505;
+  --surface-border: 1px dashed var(--border);
+  --surface-radius: var(--radius-lg);
+
+  @include surfaces.surface;
+  width: min(560px, 100%);
+  padding: 28px 24px;
+
+  &[data-active="true"] {
+    border-color: var(--border-strong);
+  }
+
+  &[data-clickable="true"] {
+    cursor: pointer;
+  }
+
+  &[data-disabled="true"] {
+    opacity: 0.35;
+    filter: grayscale(1);
+    cursor: not-allowed;
+  }
+}
+
+.dropzone-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.dropzone-title {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.dropzone-subtitle {
+  margin: 0;
+  color: var(--muted-strong);
+  font-size: 0.9rem;
+}
+
+.details {
+  width: min(560px, 100%);
+  text-align: left;
+  border-top: 1px solid var(--border);
+  padding-top: 18px;
+
+  ul {
+    margin: 0;
+    padding-left: 18px;
+    color: var(--muted);
+  }
+
+  li + li {
+    margin-top: 6px;
+  }
+}
+
+.details-title {
+  margin: 0 0 8px;
+  font-size: 0.9rem;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  color: var(--muted-strong);
+}
+
+// Drag overlay sits above the landing screen during file drops.
+.drag-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.72);
+  opacity: 0;
+  transition: opacity 140ms ease;
+  pointer-events: none;
+  z-index: 10;
+
+  &[data-active="true"] {
+    opacity: 1;
+  }
+}
+
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .drag-overlay {
+    background: rgba(0, 0, 0, 0.55);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+  }
+}
+
+.drag-overlay-inner {
+  --surface-bg: rgba(0, 0, 0, 0.6);
+  --surface-border: 1px solid var(--border-strong);
+  --surface-radius: var(--radius-md);
+  --surface-shadow: var(--shadow-overlay);
+
+  @include surfaces.surface;
+  padding: 20px 28px;
+}
+
+.drag-title {
+  margin: 0 0 6px;
+  font-size: 1.1rem;
+}
+
+.drag-subtitle {
+  margin: 0;
+  color: var(--muted-strong);
+  font-size: 0.95rem;
+}
+
+@media (max-width: 600px) {
+  .version {
+    position: static;
+    align-self: center;
+    margin-bottom: 8px;
+  }
+
+  .details {
+    text-align: center;
+
+    ul {
+      list-style: none;
+      padding-left: 0;
+    }
+  }
+}
+
+// Respect reduced motion by avoiding scale/opacity transitions on drag.
+@media (prefers-reduced-motion: reduce) {
+  .app .app-content,
+  .drag-overlay {
+    transition: none;
+  }
+
+  .app[data-dragging="true"] .app-content {
+    transform: none;
+  }
+}

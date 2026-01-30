@@ -1,3 +1,4 @@
+@use "sass:color";
 @use "sass:map";
 
 // Theme tokens and helpers live here so palette changes stay isolated.
@@ -9,9 +10,38 @@ $themes: (
     muted-strong: rgba(255, 255, 255, 0.55),
     border: rgba(255, 255, 255, 0.2),
     border-strong: rgba(255, 255, 255, 0.5),
-    glow: rgba(255, 255, 255, 0.16)
+    glow: rgba(255, 255, 255, 0.16),
+    accent: #7bffa8,
+    accent-contrast: #050505,
+    shadows: (
+      card: 0 10px 24px rgba(0, 0, 0, 0.28),
+      modal: 0 20px 60px rgba(0, 0, 0, 0.6),
+      lift: 0 24px 70px rgba(0, 0, 0, 0.6),
+      menu: 0 18px 40px rgba(0, 0, 0, 0.6),
+      overlay: 0 0 24px rgba(0, 0, 0, 0.4)
+    ),
+    status: (
+      success: #aaf5c3,
+      error: #ff9292,
+      warning: #ffdd96,
+      info: #c4d4ff
+    )
   )
 );
+
+// Derive a consistent set of status tokens per theme color.
+@mixin tone-vars($name, $base) {
+  $border: color.scale($base, $lightness: -22%);
+  $background: color.mix(#000, $base, 75%);
+
+  --tone-#{$name}: #{color.change($base, $alpha: 0.9)};
+  --tone-#{$name}-strong: #{color.change($base, $alpha: 0.95)};
+  --tone-#{$name}-muted: #{color.change($base, $alpha: 0.75)};
+  --tone-#{$name}-soft: #{color.change($base, $alpha: 0.4)};
+  --tone-#{$name}-subtle: #{color.change($base, $alpha: 0.12)};
+  --tone-#{$name}-border: #{color.change($border, $alpha: 0.45)};
+  --tone-#{$name}-bg: #{color.change($background, $alpha: 0.35)};
+}
 
 @mixin theme-vars($name) {
   $tokens: map.get($themes, $name);
@@ -20,6 +50,16 @@ $themes: (
   }
 
   @each $key, $value in $tokens {
-    --#{$key}: #{$value};
+    @if $key == status {
+      @each $tone, $tone-color in $value {
+        @include tone-vars($tone, $tone-color);
+      }
+    } @else if $key == shadows {
+      @each $shadow-key, $shadow-value in $value {
+        --shadow-#{$shadow-key}: #{$shadow-value};
+      }
+    } @else {
+      --#{$key}: #{$value};
+    }
   }
 }

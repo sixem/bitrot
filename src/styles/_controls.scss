@@ -1,0 +1,316 @@
+@use "./surfaces" as surfaces;
+
+// Controls layer: shared primitives for buttons, inputs, selects, sliders, and pills.
+// These use CSS variables so components can tune sizing without copying full styles.
+
+:where(
+  .ui-button,
+  .system-gate-button,
+  .modal-button,
+  .editor-button,
+  .editor-back,
+  .preview-toggle,
+  .preview-button,
+  .preview-warning-action,
+  .export-toggle
+) {
+  --button-padding: 6px 12px;
+  --button-font-size: 0.85rem;
+  --button-letter-spacing: 0.12em;
+  --button-text-transform: uppercase;
+  --button-radius: var(--radius-pill);
+  --button-bg: transparent;
+  --button-border: 1px solid var(--border);
+  --button-color: var(--fg);
+  --button-hover-brightness: 1.06;
+  --button-hover-border: var(--border-strong);
+  --button-disabled-opacity: 0.5;
+  --button-disabled-cursor: not-allowed;
+
+  border: var(--button-border);
+  background: var(--button-bg);
+  color: var(--button-color);
+  padding: var(--button-padding);
+  border-radius: var(--button-radius);
+  font-size: var(--button-font-size);
+  letter-spacing: var(--button-letter-spacing);
+  text-transform: var(--button-text-transform);
+  cursor: pointer;
+  font-family: var(--body-font);
+}
+
+:where(
+  .ui-button,
+  .system-gate-button,
+  .modal-button,
+  .editor-button,
+  .preview-toggle,
+  .preview-button,
+  .preview-warning-action,
+  .export-toggle
+):disabled {
+  opacity: var(--button-disabled-opacity);
+  cursor: var(--button-disabled-cursor);
+}
+
+:where(
+  .ui-button,
+  .system-gate-button,
+  .modal-button,
+  .editor-button,
+  .editor-back,
+  .preview-toggle,
+  .preview-button,
+  .preview-warning-action,
+  .export-toggle
+):not(:disabled):hover {
+  border-color: var(--button-hover-border);
+  filter: brightness(var(--button-hover-brightness));
+}
+
+// Shared text and select controls.
+:where(.ui-control, .export-input, .export-select, .editor-select, .mode-input, .export-textarea) {
+  --control-padding: 8px 10px;
+  --control-font-size: 0.85rem;
+  --control-radius: var(--radius-md);
+  --control-bg: #050505;
+  --control-border: 1px solid var(--border);
+  --control-color: var(--fg);
+  --control-cursor: text;
+  --control-hover-brightness: 1.05;
+  --control-hover-border: var(--border-strong);
+
+  border: var(--control-border);
+  border-radius: var(--control-radius);
+  background: var(--control-bg);
+  color: var(--control-color);
+  padding: var(--control-padding);
+  font-size: var(--control-font-size);
+  font-family: var(--body-font);
+  cursor: var(--control-cursor);
+}
+
+:where(.ui-control, .export-input, .export-select, .editor-select, .mode-input, .export-textarea):not(:disabled):hover {
+  border-color: var(--control-hover-border);
+  filter: brightness(var(--control-hover-brightness));
+}
+
+// Shared select chevron: use the same SVG + offsets everywhere we opt into custom selects.
+:where(.ui-select-trigger, .export-select, .editor-select) {
+  --select-chevron-size: 12px 8px;
+  --select-chevron-offset: 18px;
+  --select-chevron-padding: 36px;
+  --select-chevron: url("data:image/svg+xml,%3Csvg width='12' height='8' viewBox='0 0 12 8' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M2 2l4 4 4-4' stroke='%23cfd4d8' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+
+  --control-cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  padding-right: var(--select-chevron-padding);
+  background-image: var(--select-chevron);
+  background-repeat: no-repeat;
+  background-position: right var(--select-chevron-offset) center;
+  background-size: var(--select-chevron-size);
+}
+
+// Custom dropdown framing for the shared select component.
+.ui-select {
+  width: 100%;
+  position: relative;
+}
+
+.ui-select-trigger {
+  width: 100%;
+  text-align: left;
+  line-height: 1.2;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ui-select-value {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ui-select-menu {
+  --surface-bg: #050505;
+  --surface-border: 1px solid var(--border);
+  --surface-radius: var(--radius-md);
+  --surface-shadow: var(--shadow-menu);
+
+  @include surfaces.surface;
+  position: fixed;
+  z-index: 70;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px;
+  overflow-y: auto;
+}
+
+.ui-select-option {
+  border: 0;
+  background: transparent;
+  color: var(--fg);
+  padding: 6px 8px;
+  border-radius: calc(var(--radius-md) - 2px);
+  font-size: 0.85rem;
+  font-family: var(--body-font);
+  text-align: left;
+  cursor: pointer;
+}
+
+.ui-select-option:not(:disabled):hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.ui-select-option[data-selected="true"] {
+  background: var(--tone-success-subtle);
+}
+
+.ui-select-option[data-selected="true"]:not(:disabled):hover {
+  background: var(--tone-success-subtle);
+}
+
+.ui-select-option:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.ui-select-custom {
+  margin-top: 4px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.ui-select-custom-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.ui-select-custom-label {
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  font-size: 0.6rem;
+  color: var(--muted-strong);
+}
+
+.ui-select-custom-value {
+  font-size: 0.75rem;
+  color: var(--muted);
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+.ui-select-custom-input {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px;
+  border-radius: calc(var(--radius-md) - 2px);
+  border: 1px solid var(--border);
+  background: rgba(0, 0, 0, 0.5);
+}
+
+.ui-select-custom-field {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--fg);
+  font-size: 0.85rem;
+  font-family: var(--body-font);
+  outline: none;
+}
+
+.ui-select-custom-unit {
+  font-size: 0.7rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted-strong);
+}
+
+// Range sliders: shared base handles styling, this class just tunes sizing + track tint.
+:where(.range-input, .mode-slider, .preview-volume) {
+  --range-height: 14px;
+  --range-track-height: 4px;
+  --range-track-color: #131313;
+  --range-thumb-size: 12px;
+  --range-thumb-offset: -4px;
+  --range-thumb-border: 2px solid #050505;
+  --range-thumb-color: var(--fg);
+  --range-thumb-shadow: 0 0 6px rgba(0, 0, 0, 0.6);
+  --range-disabled-opacity: 0.4;
+
+  width: 100%;
+  appearance: none;
+  height: var(--range-height);
+  border-radius: 999px;
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+:where(.range-input, .mode-slider, .preview-volume):disabled {
+  opacity: var(--range-disabled-opacity);
+  cursor: not-allowed;
+}
+
+:where(.range-input, .mode-slider, .preview-volume)::-webkit-slider-runnable-track {
+  height: var(--range-track-height);
+  border-radius: 999px;
+  background: var(--range-track-color);
+}
+
+:where(.range-input, .mode-slider, .preview-volume)::-moz-range-track {
+  height: var(--range-track-height);
+  border-radius: 999px;
+  background: var(--range-track-color);
+}
+
+:where(.range-input, .mode-slider, .preview-volume)::-webkit-slider-thumb {
+  appearance: none;
+  width: var(--range-thumb-size);
+  height: var(--range-thumb-size);
+  border-radius: 50%;
+  border: var(--range-thumb-border);
+  background: var(--range-thumb-color);
+  box-shadow: var(--range-thumb-shadow);
+  margin-top: var(--range-thumb-offset);
+}
+
+:where(.range-input, .mode-slider, .preview-volume)::-moz-range-thumb {
+  width: var(--range-thumb-size);
+  height: var(--range-thumb-size);
+  border-radius: 50%;
+  border: var(--range-thumb-border);
+  background: var(--range-thumb-color);
+  box-shadow: var(--range-thumb-shadow);
+}
+
+// Pill tags for labels and status chips.
+:where(.ui-pill, .editor-pill, .editor-card-tag, .export-tag) {
+  --pill-font-size: 0.65rem;
+  --pill-letter-spacing: 0.18em;
+  --pill-padding: 4px 10px;
+  --pill-bg: rgba(0, 0, 0, 0.35);
+  --pill-color: var(--muted);
+  --pill-border: 1px solid var(--border);
+
+  font-size: var(--pill-font-size);
+  letter-spacing: var(--pill-letter-spacing);
+  text-transform: uppercase;
+  padding: var(--pill-padding);
+  border-radius: var(--radius-pill);
+  border: var(--pill-border);
+  background: var(--pill-bg);
+  color: var(--pill-color);
+}
