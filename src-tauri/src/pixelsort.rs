@@ -843,6 +843,21 @@ fn build_preview_path(tag: &str) -> PathBuf {
   std::env::temp_dir().join(file_name)
 }
 
+fn build_preview_nonce() -> u128 {
+  SystemTime::now()
+    .duration_since(UNIX_EPOCH)
+    .map(|value| value.as_nanos())
+    .unwrap_or(0)
+}
+
+// Build a unique preview path for one-off renders.
+fn build_preview_unique_path(tag: &str) -> PathBuf {
+  let safe_tag = tag.replace(|c: char| !c.is_ascii_alphanumeric(), "_");
+  let nonce = build_preview_nonce();
+  let file_name = format!("bitrot-preview-{safe_tag}-{nonce}.png");
+  std::env::temp_dir().join(file_name)
+}
+
 const MAX_PREVIEW_DIMENSION: u32 = 1280;
 
 fn resolve_preview_size(width: u32, height: u32) -> (u32, u32) {
@@ -884,10 +899,7 @@ fn downscale_rgba_nearest(
 
 fn build_preview_raw_path(tag: &str) -> PathBuf {
   let safe_tag = tag.replace(|c: char| !c.is_ascii_alphanumeric(), "_");
-  let nonce = SystemTime::now()
-    .duration_since(UNIX_EPOCH)
-    .map(|value| value.as_nanos())
-    .unwrap_or(0);
+  let nonce = build_preview_nonce();
   let file_name = format!("bitrot-preview-{safe_tag}-{nonce}.rgba");
   std::env::temp_dir().join(file_name)
 }
@@ -1339,9 +1351,14 @@ pub async fn pixelsort_preview(
     preview_height
   );
 
-  let preview_path = build_preview_path("manual");
-  encode_preview_frame(&app, &preview_frame, preview_width, preview_height, &preview_path)
-    .await?;
+  let preview_path = build_preview_unique_path("manual");
+  if let Err(error) =
+    encode_preview_frame(&app, &preview_frame, preview_width, preview_height, &preview_path)
+      .await
+  {
+    cleanup_file(&preview_path);
+    return Err(error);
+  }
 
   Ok(PixelsortPreviewResponse {
     path: preview_path.to_string_lossy().into_owned()
