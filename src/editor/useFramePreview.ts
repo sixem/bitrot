@@ -5,8 +5,15 @@ import type { VideoAsset } from "@/domain/video";
 import type { VideoMetadata } from "@/system/ffprobe";
 import type { FramePreviewRequest } from "@/editor/preview/types";
 import { sendPixelsortPreviewFrame } from "@/editor/preview/sendPixelsortPreviewFrame";
-import { getModeDefinition, type ModeConfigMap, type ModeId } from "@/modes/definitions";
+import { sendModuloMappingPreviewFrame } from "@/editor/preview/sendByteRangePreviewFrame";
+import {
+  getModeDefinition,
+  type ModeConfigMap,
+  type ModeId,
+  type ModePreview
+} from "@/modes/definitions";
 import type { PixelsortConfig } from "@/modes/pixelsort";
+import type { ModuloMappingConfig } from "@/modes/moduloMapping";
 import { cleanupPreviewFile, registerPreviewFile } from "@/system/previewFiles";
 import makeDebug from "@/utils/debug";
 
@@ -15,7 +22,7 @@ type FramePreviewOptions = {
   modeId: ModeId;
   modeConfig: ModeConfigMap[ModeId];
   metadata?: VideoMetadata;
-  // Used to scope live preview events to the active pixelsort job.
+  // Used to scope live preview events to the active native job.
   jobId?: string;
   isProcessing: boolean;
 };
@@ -40,7 +47,7 @@ type PreviewState = {
   error?: string;
 };
 
-type PixelsortPreviewPayload = {
+type NativePreviewPayload = {
   jobId: string;
   frame: number;
   path: string;
@@ -51,8 +58,10 @@ const appWindow = getCurrentWindow();
 
 // Hook that owns on-demand and live preview frames for native preview modes.
 
-const supportsPixelsortPreview = (modeId: ModeId) =>
-  getModeDefinition(modeId).preview === "pixelsort";
+const PREVIEW_EVENT_NAMES: Record<ModePreview, string> = {
+  pixelsort: "pixelsort-preview",
+  "modulo-mapping": "modulo-mapping-preview"
+};
 
 const buildPreviewUrl = (path: string) =>
   `${convertFileSrc(path)}?v=${Date.now()}`;
@@ -76,7 +85,7 @@ const awaitWithTimeout = async <T>(promise: Promise<T>, timeoutMs: number) => {
   }
 };
 
-// Manages frame preview state for non-ffmpeg modes (currently pixelsort).
+// Manages frame preview state for native modes (pixelsort + modulo mapping).
 const useFramePreview = ({
   asset,
   modeId,
@@ -85,7 +94,8 @@ const useFramePreview = ({
   jobId,
   isProcessing
 }: FramePreviewOptions): FramePreviewControl => {
-  const isSupported = supportsPixelsortPreview(modeId);
+  const previewMode = getModeDefinition(modeId).preview;
+  const isSupported = previewMode !== undefined;
   const [manualPreview, setManualPreview] = useState<PreviewState>({
     isActive: false,
     isLoading: false
@@ -153,7 +163,7 @@ const useFramePreview = ({
   }, [isSupported, modeConfig, clearManualPreview]);
 
   useEffect(() => {
-    if (!isSupported || !isProcessing) {
+    if (!isSupported || !previewMode || !isProcessing) {
       clearLivePreview("preview stopped");
       return;
     }
@@ -162,7 +172,8 @@ const useFramePreview = ({
     let unlisten: (() => void) | undefined;
 
     // Listen on the current window because Rust emits preview events window-scoped.
-    appWindow.listen<PixelsortPreviewPayload>("pixelsort-preview", (event) => {
+    const eventName = PREVIEW_EVENT_NAMES[previewMode];
+    appWindow.listen<NativePreviewPayload>(eventName, (event) => {
       if (!isMounted) {
         return;
       }
@@ -200,11 +211,11 @@ const useFramePreview = ({
         unlisten();
       }
     };
-  }, [clearLivePreview, isProcessing, isSupported, jobId]);
+  }, [clearLivePreview, isProcessing, isSupported, jobId, previewMode]);
 
   const requestPreview = useCallback(
     async (request: FramePreviewRequest) => {
-      if (!isSupported) {
+      if (!isSupported || !previewMode) {
         setManualPreview({
           isActive: true,
           isLoading: false,
@@ -283,11 +294,22 @@ const useFramePreview = ({
       try {
         const isStale = () =>
           !isMountedRef.current || requestId !== requestIdRef.current;
-        const responsePath = await sendPixelsortPreviewFrame(
-          { width, height, data },
-          modeConfig as PixelsortConfig,
-          { shouldAbort: isStale }
-        );
+        let responsePath: string;
+        if (previewMode === "pixelsort") {
+          responsePath = await sendPixelsortPreviewFrame(
+            { width, height, data },
+            modeConfig as PixelsortConfig,
+            { shouldAbort: isStale }
+          );
+        } else if (previewMode === "modulo-mapping") {
+          responsePath = await sendModuloMappingPreviewFrame(
+            { width, height, data },
+            modeConfig as ModuloMappingConfig,
+            { shouldAbort: isStale }
+          );
+        } else {
+          throw new Error("Preview is not available for this mode.");
+        }
 
         if (isStale()) {
           void cleanupPreviewFile(responsePath, "preview stale");
@@ -335,7 +357,7 @@ const useFramePreview = ({
         }));
       }
     },
-    [isSupported, metadata?.durationSeconds, metadata?.fps, modeConfig]
+    [isSupported, metadata?.durationSeconds, metadata?.fps, modeConfig, previewMode]
   );
 
   const clearPreview = useCallback(() => {

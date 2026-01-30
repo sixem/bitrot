@@ -3,6 +3,7 @@ import type { VhsConfig } from "@/modes/vhs";
 import type { DatablendConfig } from "@/modes/datablend";
 import type { PixelsortConfig } from "@/modes/pixelsort";
 import type { DatamoshConfig } from "@/modes/datamosh";
+import type { ModuloMappingConfig } from "@/modes/moduloMapping";
 import {
   MODE_DEFINITIONS,
   getModeDefinition,
@@ -10,6 +11,7 @@ import {
   type ModeId
 } from "@/modes/definitions";
 import {
+  ModuloMappingControls,
   DatablendControls,
   DatamoshControls,
   GlitchControls,
@@ -89,6 +91,13 @@ const ModeCard = ({
     });
   };
 
+  const handleModuloMappingConfigChange = (patch: Partial<ModuloMappingConfig>) => {
+    onConfigChange({
+      ...(config as ModuloMappingConfig),
+      ...patch
+    });
+  };
+
   const modeControls = (() => {
     if (value === "vhs") {
       return (
@@ -122,6 +131,15 @@ const ModeCard = ({
         <PixelsortControls
           config={config as PixelsortConfig}
           onChange={handlePixelsortConfigChange}
+          disabled={disabled}
+        />
+      );
+    }
+    if (value === "modulo-mapping") {
+      return (
+        <ModuloMappingControls
+          config={config as ModuloMappingConfig}
+          onChange={handleModuloMappingConfigChange}
           disabled={disabled}
         />
       );

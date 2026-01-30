@@ -29,7 +29,8 @@ import {
   DEFAULT_EXPORT_PRESET_ID,
   EXPORT_PRESETS,
   getExportPreset,
-  type ExportPresetId
+  type ExportPresetId,
+  type ExportPreset
 } from "@/jobs/exportPresets";
 import {
   buildVideoEncodingArgs,
@@ -217,10 +218,60 @@ const ExportModal = ({
     setCustomSizeCapValue(String(Math.round(sizeCapMb * 1024)));
     setIsCustomSizeCap(true);
   }, [sizeCapMb, sizeCapOptions]);
-  const presetOptions = EXPORT_PRESETS.map((preset) => ({
-    value: preset.id,
-    label: preset.label
-  }));
+  const resolvePresetCodec = (encoder?: VideoEncoder) => {
+    if (encoder === "libvpx-vp9") {
+      return { key: "vp9", label: "VP9" };
+    }
+    if (encoder === "h264_nvenc") {
+      return { key: "nvenc", label: "NVENC" };
+    }
+    return { key: "h264", label: "H.264" };
+  };
+
+  const splitPresetLabel = (label: string) => {
+    const match = label.match(/^(.*)\s+\(([^)]+)\)\s*$/);
+    if (!match) {
+      return { name: label.trim(), codec: undefined };
+    }
+    return { name: match[1].trim(), codec: match[2].trim() };
+  };
+
+  // Build preset labels with right-aligned codec tags for cleaner scanning.
+  const buildPresetLabel = (preset: ExportPreset) => {
+    const encoder = preset.profile.videoEncoder ?? DEFAULT_EXPORT_PROFILE.videoEncoder;
+    const codec = resolvePresetCodec(encoder);
+    const split = splitPresetLabel(preset.label);
+    const codecLabel = split.codec || codec.label;
+    return (
+      <span className="export-preset-option">
+        <span className="export-preset-option__name">{split.name}</span>
+        <span className="export-preset-option__codec" data-codec={codec.key}>
+          {codecLabel}
+        </span>
+      </span>
+    );
+  };
+
+  const presetSortOrder: Record<string, number> = {
+    h264: 1,
+    nvenc: 2,
+    vp9: 3
+  };
+  const presetOptions = [...EXPORT_PRESETS]
+    .sort((left, right) => {
+      const leftCodec = resolvePresetCodec(left.profile.videoEncoder).key;
+      const rightCodec = resolvePresetCodec(right.profile.videoEncoder).key;
+      const leftRank = presetSortOrder[leftCodec] ?? 99;
+      const rightRank = presetSortOrder[rightCodec] ?? 99;
+      if (leftRank !== rightRank) {
+        return leftRank - rightRank;
+      }
+      return left.label.localeCompare(right.label);
+    })
+    .map((preset) => ({
+      value: preset.id,
+      label: buildPresetLabel(preset)
+    }));
   const formatOptions = EXPORT_FORMATS.map((format) => ({
     value: format,
     label: getFormatLabel(format)
@@ -435,7 +486,7 @@ const ExportModal = ({
           <div className="export-title-side">
             <div className="export-preset">
               <Select
-                className="export-input export-select"
+                className="export-input export-select export-select--preset"
                 value={settings.presetId ?? DEFAULT_EXPORT_PRESET_ID}
                 ariaLabel="Export preset"
                 options={presetOptions}
@@ -451,7 +502,7 @@ const ExportModal = ({
             </div>
           </div>
         </div>
-        <div className="export-form">
+        <div className="export-form scrollable">
           <div className="export-section export-section--wide">
             <div className="export-section-header">Output</div>
             <div className="export-grid export-grid--output">
