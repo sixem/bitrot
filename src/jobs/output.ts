@@ -1,5 +1,5 @@
 // Output path helpers for export defaults and UI display.
-import { DEFAULT_ENCODING_ID, type EncodingId } from "@/jobs/encoding";
+import type { ExportFormat } from "@/jobs/exportProfile";
 
 const stripQuotes = (value: string) => value.trim().replace(/^"+|"+$/g, "");
 
@@ -18,7 +18,6 @@ export type OutputPathParts = {
   folder: string;
   fileName: string;
   separator: string;
-  encodingId: EncodingId;
 };
 
 export const buildDefaultOutputPath = (
@@ -58,8 +57,7 @@ export const splitOutputPath = (outputPath: string): OutputPathParts => {
   return {
     folder,
     fileName,
-    separator,
-    encodingId: DEFAULT_ENCODING_ID
+    separator
   };
 };
 
@@ -78,6 +76,24 @@ export const joinOutputPath = (
 
   return `${cleanFolder}${separator}${cleanFile}`;
 };
+
+// Ensures a filename ends with the provided extension.
+export const replaceExtension = (fileName: string, extension: string) => {
+  const cleanFile = stripQuotes(fileName);
+  if (!cleanFile) {
+    return cleanFile;
+  }
+  const normalizedExtension = extension.startsWith(".")
+    ? extension
+    : `.${extension}`;
+  const dotIndex = cleanFile.lastIndexOf(".");
+  if (dotIndex <= 0) {
+    return `${cleanFile}${normalizedExtension}`;
+  }
+  return `${cleanFile.slice(0, dotIndex)}${normalizedExtension}`;
+};
+
+export const resolveExtensionForFormat = (format: ExportFormat) => format;
 
 // Compares two paths, with a case-insensitive match on Windows.
 export const pathsMatch = (left: string, right: string) => {

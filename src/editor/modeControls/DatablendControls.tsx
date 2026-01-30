@@ -1,10 +1,18 @@
 import type { DatablendBlendMode, DatablendConfig } from "@/modes/datablend";
+import Select from "@/ui/controls/Select";
 
 type DatablendControlsProps = {
   config: DatablendConfig;
   onChange: (patch: Partial<DatablendConfig>) => void;
   disabled?: boolean;
 };
+
+const BLEND_MODE_OPTIONS = [
+  { value: "difference", label: "Difference" },
+  { value: "screen", label: "Screen" },
+  { value: "multiply", label: "Multiply" },
+  { value: "overlay", label: "Overlay" }
+];
 
 // Controls for the datablend mode.
 const DatablendControls = ({ config, onChange, disabled }: DatablendControlsProps) => (
@@ -37,19 +45,15 @@ const DatablendControls = ({ config, onChange, disabled }: DatablendControlsProp
     </label>
     <label className="mode-control">
       <span className="mode-control-label">Blend mode</span>
-      <select
+      <Select
         className="editor-select"
         value={config.blendMode}
-        onChange={(event) =>
-          onChange({ blendMode: event.target.value as DatablendBlendMode })
+        onChange={(nextValue) =>
+          onChange({ blendMode: nextValue as DatablendBlendMode })
         }
         disabled={disabled}
-      >
-        <option value="difference">Difference</option>
-        <option value="screen">Screen</option>
-        <option value="multiply">Multiply</option>
-        <option value="overlay">Overlay</option>
-      </select>
+        options={BLEND_MODE_OPTIONS}
+      />
     </label>
   </div>
 );

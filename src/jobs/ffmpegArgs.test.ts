@@ -12,19 +12,24 @@ describe("ffmpegArgs", () => {
     expect(SAFE_SCALE_FILTER).toBe("scale=trunc(iw/2)*2:trunc(ih/2)*2,setsar=1");
   });
 
-  it("uses AAC audio for mp4/m4v outputs", () => {
+  it("uses AAC audio for mp4/m4v/mov outputs", () => {
     expect(buildAudioArgs("clip.mp4")).toEqual(["-c:a", "aac", "-b:a", "192k"]);
     expect(buildAudioArgs("clip.m4v")).toEqual(["-c:a", "aac", "-b:a", "192k"]);
+    expect(buildAudioArgs("clip.mov")).toEqual(["-c:a", "aac", "-b:a", "192k"]);
   });
 
-  it("copies audio for non-mp4 containers", () => {
-    expect(buildAudioArgs("clip.mkv")).toEqual(["-c:a", "copy"]);
-    expect(buildAudioArgs("clip.mov")).toEqual(["-c:a", "copy"]);
+  it("uses Opus audio for webm outputs", () => {
+    expect(buildAudioArgs("clip.webm")).toEqual(["-c:a", "libopus", "-b:a", "160k"]);
   });
 
-  it("adds faststart for mp4/m4v outputs", () => {
+  it("uses AAC audio for mkv outputs", () => {
+    expect(buildAudioArgs("clip.mkv")).toEqual(["-c:a", "aac", "-b:a", "192k"]);
+  });
+
+  it("adds faststart for mp4/m4v/mov outputs", () => {
     expect(buildContainerArgs("clip.mp4")).toEqual(["-movflags", "+faststart"]);
     expect(buildContainerArgs("clip.m4v")).toEqual(["-movflags", "+faststart"]);
+    expect(buildContainerArgs("clip.mov")).toEqual(["-movflags", "+faststart"]);
   });
 
   it("leaves container args empty for other extensions", () => {

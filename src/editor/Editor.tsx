@@ -12,6 +12,7 @@ import useFfmpegJob from "@/jobs/useFfmpegJob";
 import {
   buildDefaultOutputPath,
   joinOutputPath,
+  resolveExtensionForFormat,
   splitOutputPath
 } from "@/jobs/output";
 import { revealInFolder } from "@/system/reveal";
@@ -25,15 +26,20 @@ import {
   type ModeConfigMap,
   type ModeId
 } from "@/modes/definitions";
-import type { EncodingId } from "@/jobs/encoding";
+import {
+  DEFAULT_EXPORT_PROFILE,
+  type ExportProfile
+} from "@/jobs/exportProfile";
+import { DEFAULT_EXPORT_PRESET_ID } from "@/jobs/exportPresets";
 
 type EditorProps = {
   asset: VideoAsset;
   onReplace: (path: string) => void;
+  onBack: () => void;
 };
 
 // Editor shell that hosts the upcoming processing workflow.
-const Editor = ({ asset, onReplace }: EditorProps) => {
+const Editor = ({ asset, onReplace, onBack }: EditorProps) => {
   const metadataState = useVideoMetadata(asset);
   const { job, run, cancel } = useFfmpegJob();
   const { isDragging } = useGlobalVideoDrop({
@@ -44,9 +50,9 @@ const Editor = ({ asset, onReplace }: EditorProps) => {
   const [receipt, setReceipt] = useState<{
     outputPath: string;
     modeId: ModeId;
-    encodingId: EncodingId;
+    profile: ExportProfile;
   } | null>(null);
-  const [modeId, setModeId] = useState<ModeId>("analog");
+  const [modeId, setModeId] = useState<ModeId>("copy");
   const activeMode = getModeDefinition(modeId);
   const [frameMapRequestId, setFrameMapRequestId] = useState(0);
   const lastAssetPathRef = useRef(asset.path);
@@ -69,10 +75,8 @@ const Editor = ({ asset, onReplace }: EditorProps) => {
     modeId,
     modeConfig: modeConfigs[modeId],
     metadata: metadataState.metadata,
-    frameMap: frameMapState.frameMap,
     jobId: job.jobId,
-    isProcessing: job.status === "running",
-    trim: trimSelection.selection
+    isProcessing: job.status === "running"
   });
   const statusLabel =
     metadataState.status === "loading"
@@ -109,13 +113,19 @@ const Editor = ({ asset, onReplace }: EditorProps) => {
     trimStartSeconds !== undefined && trimEndSeconds !== undefined
       ? Math.max(0, trimEndSeconds - trimStartSeconds)
       : metadataDurationSeconds;
+  const defaultProfile: ExportProfile =
+    modeId === "copy"
+      ? { ...DEFAULT_EXPORT_PROFILE, videoMode: "copy" }
+      : DEFAULT_EXPORT_PROFILE;
   const defaultOutputPath = buildDefaultOutputPath(
     asset.path,
-    activeMode.encode === "copy" ? undefined : "mp4"
+    resolveExtensionForFormat(defaultProfile.format)
   );
-  const [exportSettings, setExportSettings] = useState<ExportSettings>(() =>
-    splitOutputPath(defaultOutputPath)
-  );
+  const [exportSettings, setExportSettings] = useState<ExportSettings>(() => ({
+    ...splitOutputPath(defaultOutputPath),
+    profile: defaultProfile,
+    presetId: DEFAULT_EXPORT_PRESET_ID
+  }));
   const outputPath =
     job.outputPath ??
     joinOutputPath(
@@ -169,7 +179,7 @@ const Editor = ({ asset, onReplace }: EditorProps) => {
   const lastRunRef = useRef<{
     outputPath: string;
     modeId: ModeId;
-    encodingId: EncodingId;
+    profile: ExportProfile;
   } | null>(null);
   const lastStatusRef = useRef(job.status);
   const shellRef = useRef<HTMLElement>(null);
@@ -202,11 +212,32 @@ const Editor = ({ asset, onReplace }: EditorProps) => {
 
   useEffect(() => {
     setExportSettings((prev) => ({
-      ...splitOutputPath(defaultOutputPath),
-      // Preserve the user's encoding selection when the mode changes.
-      encodingId: prev.encodingId
+      ...splitOutputPath(
+        buildDefaultOutputPath(
+          asset.path,
+          resolveExtensionForFormat(prev.profile.format)
+        )
+      ),
+      profile: prev.profile,
+      presetId: prev.presetId
     }));
-  }, [defaultOutputPath]);
+  }, [asset.path]);
+
+  useEffect(() => {
+    if (modeId === "copy") {
+      return;
+    }
+    if (exportSettings.profile.videoMode !== "copy") {
+      return;
+    }
+    setExportSettings((prev) => ({
+      ...prev,
+      profile: {
+        ...prev.profile,
+        videoMode: "encode"
+      }
+    }));
+  }, [modeId, exportSettings.profile.videoMode]);
 
   useEffect(() => {
     if (job.status === "running") {
@@ -219,12 +250,12 @@ const Editor = ({ asset, onReplace }: EditorProps) => {
       setReceipt({
         outputPath: outputPathValue,
         modeId: fallback?.modeId ?? modeId,
-        encodingId: fallback?.encodingId ?? exportSettings.encodingId
+        profile: fallback?.profile ?? exportSettings.profile
       });
     }
 
     lastStatusRef.current = job.status;
-  }, [job.status, job.outputPath, modeId, exportSettings.encodingId]);
+  }, [job.status, job.outputPath, modeId, exportSettings.profile]);
 
   useEffect(() => {
     if (
@@ -245,12 +276,15 @@ const Editor = ({ asset, onReplace }: EditorProps) => {
     setIsExportOpen(false);
   };
 
-  const handleExportConfirm = (nextOutputPath: string, encodingId: EncodingId) => {
+  const handleExportConfirm = (
+    nextOutputPath: string,
+    profile: ExportProfile
+  ) => {
     setIsExportOpen(false);
     lastRunRef.current = {
       outputPath: nextOutputPath,
       modeId,
-      encodingId
+      profile
     };
     run(
       asset,
@@ -258,7 +292,7 @@ const Editor = ({ asset, onReplace }: EditorProps) => {
       nextOutputPath,
       modeId,
       modeConfigs[modeId],
-      encodingId,
+      profile,
       trimStartSeconds,
       trimEndSeconds,
       metadataState.metadata
@@ -297,7 +331,18 @@ const Editor = ({ asset, onReplace }: EditorProps) => {
         <div className="editor-left">
           <header className="editor-header" ref={headerRef}>
             <div>
-              <p className="editor-eyebrow">BitRot Editor</p>
+              <div className="editor-heading">
+                <button
+                  className="editor-back"
+                  type="button"
+                  onClick={onBack}
+                  title="Back to landing"
+                  aria-label="Back to landing"
+                >
+                  ←
+                </button>
+                <p className="editor-eyebrow">BitRot Editor</p>
+              </div>
               <h1 className="editor-title">{asset.name}</h1>
             </div>
           </header>
@@ -307,15 +352,15 @@ const Editor = ({ asset, onReplace }: EditorProps) => {
               fallbackDuration={metadataState.metadata?.durationSeconds}
               fps={metadataFps}
               isVfr={metadataIsVfr}
-            isCopyMode={activeMode.encode === "copy"}
-            frameMap={frameMapState.frameMap}
-            frameMapStatus={frameMapState.status}
-            frameMapError={frameMapState.error}
-            onRequestFrameMap={handleFrameMapRequest}
-            preview={previewControl}
-            renderTimeSeconds={renderTimeSeconds}
-            trim={trimSelection}
-          />
+              isPassthroughMode={activeMode.encode === "copy"}
+              frameMap={frameMapState.frameMap}
+              frameMapStatus={frameMapState.status}
+              frameMapError={frameMapState.error}
+              onRequestFrameMap={handleFrameMapRequest}
+              preview={previewControl}
+              renderTimeSeconds={renderTimeSeconds}
+              trim={trimSelection}
+            />
           </article>
         </div>
 
@@ -532,6 +577,10 @@ const Editor = ({ asset, onReplace }: EditorProps) => {
         isOpen={isExportOpen}
         settings={exportSettings}
         inputPath={asset.path}
+        inputMetadata={metadataState.metadata}
+        modeId={modeId}
+        trimEnabled={trimEnabled}
+        durationSeconds={trimmedDurationSeconds}
         onChange={setExportSettings}
         onClose={handleExportClose}
         onConfirm={handleExportConfirm}
@@ -541,7 +590,7 @@ const Editor = ({ asset, onReplace }: EditorProps) => {
         outputPath={receipt?.outputPath ?? ""}
         inputSizeBytes={metadataSizeBytes}
         modeId={receipt?.modeId ?? modeId}
-        encodingId={receipt?.encodingId ?? exportSettings.encodingId}
+        profile={receipt?.profile ?? exportSettings.profile}
         onClose={() => setReceipt(null)}
       />
     </main>

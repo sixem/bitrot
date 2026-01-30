@@ -6,12 +6,8 @@ import { runFfmpegJob, type FfmpegRunHandle } from "@/jobs/ffmpegRunner";
 import type { ModeConfigMap, ModeId } from "@/modes/definitions";
 import type { JobProgress, JobState } from "@/jobs/types";
 import { buildDefaultOutputPath } from "@/jobs/output";
-import type { EncodingId } from "@/jobs/encoding";
-import {
-  cleanupAllJobs,
-  cleanupJob,
-  registerJobCleanup
-} from "@/jobs/jobCleanup";
+import type { ExportProfile } from "@/jobs/exportProfile";
+import { cleanupJob, registerJobCleanup } from "@/jobs/jobCleanup";
 import makeDebug from "@/utils/debug";
 
 const initialProgress: JobProgress = {
@@ -73,7 +69,7 @@ const useFfmpegJob = () => {
       outputPath?: string,
       modeId?: ModeId,
       modeConfig?: ModeConfigMap[ModeId],
-      encodingId?: EncodingId,
+      profile?: ExportProfile,
       trimStartSeconds?: number,
       trimEndSeconds?: number,
       metadata?: VideoMetadata
@@ -108,7 +104,7 @@ const useFfmpegJob = () => {
             outputPath: resolvedOutputPath,
             modeId,
             modeConfig,
-            encodingId,
+            profile,
             trimStartSeconds,
             trimEndSeconds,
             inputMetadata: metadata
@@ -185,6 +181,7 @@ const useFfmpegJob = () => {
                     ? { ...prev.progress, percent: 100 }
                     : prev.progress
               }));
+              // Only clear the cancel flag once ffmpeg has actually closed.
               cancelRef.current = false;
               handleRef.current = null;
             }
@@ -235,7 +232,7 @@ const useFfmpegJob = () => {
       await cleanupJob(cleanupPathRef.current, { keepOutput: false });
     }
     setJob((prev) => resetProgressState("canceled", prev.outputPath));
-    cancelRef.current = false;
+    // Keep the cancel flag set until onClose runs to avoid status flips.
   }, []);
 
   return {

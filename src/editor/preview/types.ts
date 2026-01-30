@@ -8,3 +8,14 @@ export type TrimControl = {
   clear: () => void;
   toggleEnabled: () => void;
 };
+
+export type PreviewFramePayload = {
+  width: number;
+  height: number;
+  data: Uint8Array;
+};
+
+export type FramePreviewRequest = {
+  timeSeconds: number;
+  frame: Promise<PreviewFramePayload>;
+};

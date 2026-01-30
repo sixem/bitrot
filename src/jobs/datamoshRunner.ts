@@ -2,22 +2,26 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { VideoAsset } from "@/domain/video";
 import { createFfmpegProgressParser } from "@/jobs/ffmpegProgress";
-import { joinOutputPath, pathsMatch, splitOutputPath } from "@/jobs/output";
+import {
+  buildTempOutputPath,
+  joinOutputPath,
+  pathsMatch,
+  splitOutputPath
+} from "@/jobs/output";
 import {
   SAFE_SCALE_FILTER,
   getExtension,
   buildAudioArgs,
-  buildContainerArgs
+  buildContainerArgs,
+  parseExtraArgs
 } from "@/jobs/ffmpegArgs";
 import type { JobProgress } from "@/jobs/types";
 import {
-  DEFAULT_ENCODING_ID,
   buildVideoEncodingArgs,
-  estimateBitrateCapKbps,
-  getEncodingPreset,
-  type EncodingId,
-  type EncodingPreset
-} from "@/jobs/encoding";
+  estimateInputBitrateCapKbps,
+  estimateTargetBitrateKbps
+} from "@/jobs/exportEncoding";
+import { DEFAULT_EXPORT_PROFILE, type ExportProfile } from "@/jobs/exportProfile";
 import type { DatamoshConfig } from "@/modes/datamosh";
 import { probeVideo, probeVideoExtradata } from "@/system/ffprobe";
 import {
@@ -57,11 +61,19 @@ const buildTrimArgs = (trim?: TrimRange) => {
 
 const ensureDatamoshContainer = (outputPath: string) => {
   const extension = getExtension(outputPath);
-  if (extension === "mp4" || extension === "m4v" || extension === "mkv") {
+  if (
+    extension === "mp4" ||
+    extension === "m4v" ||
+    extension === "mkv" ||
+    extension === "mov" ||
+    extension === "webm"
+  ) {
     return;
   }
   throw new Error(
-    `Datamosh output must be .mp4 or .mkv (got .${extension || "unknown"}).`
+    `Datamosh output must be .mp4, .mkv, .mov, or .webm (got .${
+      extension || "unknown"
+    }).`
   );
 };
 
@@ -265,27 +277,35 @@ const buildRemuxArgs = (
   return args;
 };
 
-// Discord and many web previews do not reliably decode MPEG-4 Part 2 (mp4v).
-// We transcode the moshed stream to H.264 as a final "sharing-safe" step.
 const clampH264Gop = (fps: number, requested: number) => {
   const minGop = Math.max(1, Math.round(fps * 2));
   const safeRequested = Math.max(minGop, Math.round(requested));
-  // MPEG-4 already gets clamped near 600; keep H.264 in that safe range too.
   return Math.min(600, safeRequested);
 };
 
-const buildCompatibilityTranscodeArgs = (
+const buildFinalTranscodeArgs = (
   videoPath: string,
   audioSourcePath: string,
   outputPath: string,
   fps: number,
   requestedGop: number,
-  encoding: EncodingPreset,
-  bitrateCapKbps?: number
+  profile: ExportProfile,
+  options: {
+    bitrateCapKbps?: number;
+    targetBitrateKbps?: number;
+    includeAudio?: boolean;
+    pass?: 1 | 2;
+    passLogFile?: string;
+  }
 ) => {
-  const gop = clampH264Gop(fps, requestedGop);
-  const x264Params = `keyint=${gop}:min-keyint=${gop}:scenecut=0:open-gop=0`;
-  const isX264 = encoding.encoder === "libx264";
+  const includeAudio = options.includeAudio ?? profile.audioEnabled;
+  const isH264 =
+    profile.videoEncoder === "libx264" || profile.videoEncoder === "h264_nvenc";
+  const gop = isH264 ? clampH264Gop(fps, requestedGop) : Math.round(requestedGop);
+  const x264Params = isH264
+    ? `keyint=${gop}:min-keyint=${gop}:scenecut=0:open-gop=0`
+    : "";
+  const extraArgs = parseExtraArgs(profile.extraArgs);
 
   const args = [
     "-y",
@@ -296,45 +316,64 @@ const buildCompatibilityTranscodeArgs = (
     "-err_detect",
     "ignore_err",
     "-i",
-    videoPath,
-    "-i",
-    audioSourcePath,
-    "-map",
-    "0:v:0",
-    "-map",
-    "1:a?",
+    videoPath
+  ];
+
+  if (includeAudio) {
+    args.push("-i", audioSourcePath, "-map", "0:v:0", "-map", "1:a?");
+  } else {
+    args.push("-map", "0:v:0", "-an");
+  }
+
+  args.push(
     "-vf",
     SAFE_SCALE_FILTER,
-    ...buildVideoEncodingArgs(encoding, bitrateCapKbps),
+    ...buildVideoEncodingArgs(profile, {
+      bitrateCapKbps: options.bitrateCapKbps,
+      targetBitrateKbps: options.targetBitrateKbps,
+      pass: options.pass,
+      passLogFile: options.passLogFile
+    }),
     "-pix_fmt",
     "yuv420p",
     "-r",
     `${fps}`,
     "-vsync",
-    "cfr",
-    "-g",
-    `${gop}`,
-    "-keyint_min",
-    `${gop}`,
-    "-sc_threshold",
-    "0",
-    "-bf",
-    "0",
-    "-c:a",
-    "aac",
-    "-b:a",
-    "192k",
-    "-shortest",
+    "cfr"
+  );
+
+  if (isH264) {
+    args.push(
+      "-g",
+      `${gop}`,
+      "-keyint_min",
+      `${gop}`,
+      "-sc_threshold",
+      "0",
+      "-bf",
+      "0"
+    );
+  }
+
+  if (profile.videoEncoder === "libx264") {
+    args.push("-x264-params", x264Params);
+  }
+
+  if (includeAudio) {
+    args.push(...buildAudioArgs(outputPath, { enabled: true }), "-shortest");
+  }
+
+  if (extraArgs.length > 0) {
+    args.push(...extraArgs);
+  }
+
+  args.push(
     ...buildContainerArgs(outputPath),
     "-progress",
     "pipe:1",
     "-nostats",
     outputPath
-  ];
-
-  if (isX264) {
-    args.push("-x264-params", x264Params);
-  }
+  );
 
   return args;
 };
@@ -367,7 +406,7 @@ export const runDatamoshJob = async (
   outputPath: string,
   durationSeconds: number | undefined,
   config: DatamoshConfig,
-  encodingId: EncodingId,
+  profile: ExportProfile,
   trimStartSeconds: number | undefined,
   trimEndSeconds: number | undefined,
   callbacks: DatamoshCallbacks
@@ -391,21 +430,21 @@ export const runDatamoshJob = async (
   );
   const threshold = Math.max(0, Math.min(1, config.sceneThreshold));
   const moshLength = Math.max(0, config.moshLengthSeconds);
-  const resolvedEncodingId = encodingId ?? DEFAULT_ENCODING_ID;
-  const encodingPreset = getEncodingPreset(resolvedEncodingId);
+  const resolvedProfile = profile ?? DEFAULT_EXPORT_PROFILE;
   const trimRange = normalizeTrimRange(trimStartSeconds, trimEndSeconds);
   let bitrateCapKbps: number | undefined;
+  let targetBitrateKbps: number | undefined;
 
   debug("runDatamoshJob start");
   debug("paths: input=%s output=%s temp=%s", inputPath, cleanOutput, tempPath);
   debug(
-    "config: intensity=%d gop=%d threshold=%d moshLength=%d seed=%d encoding=%s",
+    "config: intensity=%d gop=%d threshold=%d moshLength=%d seed=%d encoder=%s",
     config.intensity,
     gopSize,
     threshold,
     moshLength,
     config.seed,
-    resolvedEncodingId
+    resolvedProfile.videoEncoder
   );
   callbacks.onProgress({ percent: 0 });
 
@@ -417,10 +456,9 @@ export const runDatamoshJob = async (
   try {
     try {
       const inputProbe = await probeVideo(inputPath);
-      bitrateCapKbps = estimateBitrateCapKbps(
+      bitrateCapKbps = estimateInputBitrateCapKbps(
         inputProbe.sizeBytes,
-        inputProbe.durationSeconds,
-        encodingPreset
+        inputProbe.durationSeconds
       );
     } catch (error) {
       debug("bitrate cap probe failed: %O", error);
@@ -449,6 +487,10 @@ export const runDatamoshJob = async (
     const minWindowLength = 1 / fps;
     const duration = probe.durationSeconds ?? durationSeconds ?? minWindowLength;
     durationForProgress = duration;
+    targetBitrateKbps = estimateTargetBitrateKbps(
+      resolvedProfile.sizeCapMb,
+      durationForProgress
+    );
     const windows = buildSceneWindows(cuts, duration, fps, moshLength);
     debug("probe: fps=%d duration=%d", fps, duration);
     debug("windows: %o", windows.slice(0, 12));
@@ -529,72 +571,196 @@ export const runDatamoshJob = async (
     throw error;
   }
 
-  const args = buildCompatibilityTranscodeArgs(
+  const shouldTwoPass =
+    resolvedProfile.videoEncoder === "libvpx-vp9" &&
+    (resolvedProfile.passMode === "2pass" ||
+      (resolvedProfile.passMode === "auto" &&
+        resolvedProfile.sizeCapMb !== undefined)) &&
+    typeof targetBitrateKbps === "number";
+  const passLogPrefix = buildTempOutputPath(cleanOutput, "passlog");
+  const pass1Output = buildTempOutputPath(cleanOutput, "pass1");
+  let activeChild: { kill: () => Promise<void> } | null = null;
+  const cleanupAll = async () => {
+    await cleanupTemps([tempPath, rawPath, moshedPath, remuxPath]);
+    await cleanupFiles(
+      [pass1Output, `${passLogPrefix}-0.log`, `${passLogPrefix}-0.log.mbtree`],
+      "datamosh pass logs"
+    );
+  };
+
+  const createHandlers = (
+    feedProgress: (line: string) => void,
+    label: string,
+    onClose: (code: number | null, signal: string | null) => void
+  ) => {
+    return (command: CommandHandle, source: CommandSource) => {
+      debug("compat transcode source: %s", source);
+      command.stdout.on("data", (line) => {
+        if (typeof line === "string") {
+          feedProgress(line);
+        }
+      });
+
+      command.stderr.on("data", (line) => {
+        if (typeof line === "string" && line.trim().length > 0) {
+          const trimmed = line.trim();
+          callbacks.onLog(label ? `${label}: ${trimmed}` : trimmed);
+          debug("compat transcode stderr: %s", trimmed);
+        }
+      });
+
+      command.on("error", (error) => {
+        const unknownError = error as unknown;
+        const message =
+          typeof unknownError === "string"
+            ? unknownError
+            : unknownError instanceof Error
+              ? unknownError.message
+              : String(unknownError ?? "Unknown ffmpeg error");
+        debug("compat transcode error: %O", unknownError);
+        callbacks.onError(message);
+        void cleanupAll();
+      });
+
+      command.on("close", ({ code, signal }) => {
+        debug("compat transcode close: code=%s signal=%s", code, signal);
+        const signalValue =
+          typeof signal === "string"
+            ? signal
+            : signal === null || signal === undefined
+              ? null
+              : String(signal);
+        onClose(code ?? null, signalValue);
+      });
+    };
+  };
+
+  const createProgressHandler = (startPercent: number, endPercent: number) =>
+    createFfmpegProgressParser(durationForProgress, (progress) => {
+      const scaled = {
+        ...progress,
+        percent: Number.isFinite(progress.percent)
+          ? startPercent + (progress.percent / 100) * (endPercent - startPercent)
+          : progress.percent
+      };
+      callbacks.onProgress(scaled);
+    });
+
+  const spawnPass = async (
+    args: string[],
+    label: string,
+    startPercent: number,
+    endPercent: number,
+    onClose: (code: number | null, signal: string | null) => void
+  ) => {
+    const feedProgress = createProgressHandler(startPercent, endPercent);
+    const { child } = await spawnWithFallback(
+      "ffmpeg",
+      args,
+      createHandlers(feedProgress, label, onClose)
+    );
+    activeChild = child;
+  };
+
+  if (!shouldTwoPass) {
+    const args = buildFinalTranscodeArgs(
+      remuxPath,
+      tempPath,
+      cleanOutput,
+      fps,
+      gopSize,
+      resolvedProfile,
+      {
+        bitrateCapKbps,
+        targetBitrateKbps,
+        includeAudio: resolvedProfile.audioEnabled
+      }
+    );
+    debug("compat transcode args: %o", args);
+    try {
+      await spawnPass(args, "", 0, 100, async (code, signal) => {
+        callbacks.onClose(code, signal);
+        await cleanupAll();
+      });
+    } catch (error) {
+      debug("compat transcode spawn failed: %O", error);
+      await cleanupAll();
+      throw error;
+    }
+
+    return {
+      outputPath: cleanOutput,
+      cancel: async () => {
+        if (activeChild) {
+          await activeChild.kill();
+        }
+      }
+    };
+  }
+
+  const pass1Args = buildFinalTranscodeArgs(
+    remuxPath,
+    tempPath,
+    pass1Output,
+    fps,
+    gopSize,
+    resolvedProfile,
+    {
+      bitrateCapKbps,
+      targetBitrateKbps,
+      includeAudio: false,
+      pass: 1,
+      passLogFile: passLogPrefix
+    }
+  );
+  const pass2Args = buildFinalTranscodeArgs(
     remuxPath,
     tempPath,
     cleanOutput,
     fps,
     gopSize,
-    encodingPreset,
-    bitrateCapKbps
+    resolvedProfile,
+    {
+      bitrateCapKbps,
+      targetBitrateKbps,
+      includeAudio: resolvedProfile.audioEnabled,
+      pass: 2,
+      passLogFile: passLogPrefix
+    }
   );
-  debug("compat transcode args: %o", args);
-  const feedProgress = createFfmpegProgressParser(durationForProgress, (progress) => {
-    callbacks.onProgress(progress);
-  });
+  debug("compat pass1 args: %o", pass1Args);
+  debug("compat pass2 args: %o", pass2Args);
 
-  const bindHandlers = (command: CommandHandle, source: CommandSource) => {
-    debug("compat transcode source: %s", source);
-    command.stdout.on("data", (line) => {
-      if (typeof line === "string") {
-        feedProgress(line);
-      }
-    });
-
-    command.stderr.on("data", (line) => {
-      if (typeof line === "string" && line.trim().length > 0) {
-        callbacks.onLog(line.trim());
-        debug("compat transcode stderr: %s", line.trim());
-      }
-    });
-
-    command.on("error", (error) => {
-      const unknownError = error as unknown;
-      const message =
-        typeof unknownError === "string"
-          ? unknownError
-          : unknownError instanceof Error
-            ? unknownError.message
-            : String(unknownError ?? "Unknown ffmpeg error");
-      debug("compat transcode error: %O", unknownError);
-      callbacks.onError(message);
-      void cleanupTemps([tempPath, rawPath, moshedPath, remuxPath]);
-    });
-
-    command.on("close", ({ code, signal }) => {
-      debug("compat transcode close: code=%s signal=%s", code, signal);
-      const signalValue =
-        typeof signal === "string"
-          ? signal
-          : signal === null || signal === undefined
-            ? null
-            : String(signal);
-      callbacks.onClose(code ?? null, signalValue);
-      void cleanupTemps([tempPath, rawPath, moshedPath, remuxPath]);
-    });
-  };
-
-  let child: { kill: () => Promise<void> };
   try {
-    ({ child } = await spawnWithFallback("ffmpeg", args, bindHandlers));
+    await spawnPass(pass1Args, "pass1", 0, 50, async (code, signal) => {
+      if (code !== 0) {
+        callbacks.onClose(code, signal);
+        await cleanupAll();
+        return;
+      }
+      try {
+        await spawnPass(pass2Args, "pass2", 50, 100, async (finalCode, finalSignal) => {
+          callbacks.onClose(finalCode, finalSignal);
+          await cleanupAll();
+        });
+      } catch (error) {
+        debug("compat pass2 spawn failed: %O", error);
+        await cleanupAll();
+        throw error;
+      }
+    });
   } catch (error) {
-    debug("compat transcode spawn failed: %O", error);
-    await cleanupTemps([tempPath, rawPath, moshedPath, remuxPath]);
+    debug("compat pass1 spawn failed: %O", error);
+    await cleanupAll();
     throw error;
   }
 
   return {
     outputPath: cleanOutput,
-    cancel: () => child.kill()
+    cancel: async () => {
+      if (activeChild) {
+        await activeChild.kill();
+      }
+    }
   };
 };

@@ -7,6 +7,7 @@ import { clampTime } from "@/utils/time";
 import type { FramePreviewControl } from "@/editor/useFramePreview";
 import { sanitizePath } from "@/system/path";
 import type { TrimControl } from "@/editor/preview/types";
+import { capturePreviewFrame } from "@/editor/preview/capturePreviewFrame";
 import usePreviewVideoState from "@/editor/preview/usePreviewVideoState";
 import PreviewSurface from "@/editor/preview/PreviewSurface";
 import PreviewToolbar from "@/editor/preview/PreviewToolbar";
@@ -18,7 +19,7 @@ type VideoPreviewProps = {
   fallbackDuration?: number;
   fps?: number;
   isVfr?: boolean;
-  isCopyMode?: boolean;
+  isPassthroughMode?: boolean;
   frameMap?: FrameMap;
   frameMapStatus?: "idle" | "loading" | "ready" | "error";
   frameMapError?: string;
@@ -141,7 +142,7 @@ const VideoPreview = ({
   fallbackDuration,
   fps,
   isVfr = false,
-  isCopyMode = false,
+  isPassthroughMode = false,
   frameMap,
   frameMapStatus = "idle",
   frameMapError,
@@ -376,7 +377,7 @@ const VideoPreview = ({
     typeof trimSelection.start === "number" &&
     typeof trimSelection.end === "number";
   const trimEnabled = !!trimSelection?.enabled && trimHasRange;
-  const showCopyTrimWarning = isCopyMode && trimEnabled;
+  const showPassthroughTrimWarning = isPassthroughMode && trimEnabled;
   const trimLengthSeconds = trimSelection?.lengthSeconds;
   const trimLengthFrames = useMemo(() => {
     if (!trimHasRange) {
@@ -476,7 +477,11 @@ const VideoPreview = ({
       preview.onClear();
       return;
     }
-    preview.onRequest(currentTime);
+    const video = videoRef.current;
+    const frame = video
+      ? capturePreviewFrame(video)
+      : Promise.reject(new Error("Preview video is not ready."));
+    preview.onRequest({ timeSeconds: currentTime, frame });
   };
 
   const handleClearSelection = useCallback(() => {
@@ -859,7 +864,7 @@ const VideoPreview = ({
         showFrameMapAction={showFrameMapAction}
         frameMapActionLabel={frameMapActionLabel}
         onRequestFrameMap={handleRequestFrameMap}
-        showCopyTrimWarning={showCopyTrimWarning}
+        showPassthroughTrimWarning={showPassthroughTrimWarning}
         range={
           trim ? (
             <PreviewRange

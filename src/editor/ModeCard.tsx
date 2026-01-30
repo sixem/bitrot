@@ -1,4 +1,3 @@
-import type { ChangeEvent } from "react";
 import type { GlitchConfig } from "@/modes/glitch";
 import type { VhsConfig } from "@/modes/vhs";
 import type { DatablendConfig } from "@/modes/datablend";
@@ -17,6 +16,7 @@ import {
   PixelsortControls,
   VhsControls
 } from "@/editor/modeControls";
+import Select from "@/ui/controls/Select";
 
 type ModeCardProps = {
   value: ModeId;
@@ -30,6 +30,11 @@ type ModeEngineTag = {
   label: string;
   tone: "ffmpeg" | "native";
 };
+
+const MODE_OPTIONS = MODE_DEFINITIONS.map((mode) => ({
+  value: mode.id,
+  label: mode.label
+}));
 
 // Selectable mode card for the processing workflow.
 const ModeCard = ({
@@ -45,8 +50,8 @@ const ModeCard = ({
       ? { label: "Native", tone: "native" }
       : { label: "FFmpeg", tone: "ffmpeg" };
 
-  const handleChange = (event: ChangeEvent<HTMLSelectElement>) => {
-    onChange(event.target.value as ModeId);
+  const handleChange = (nextValue: string) => {
+    onChange(nextValue as ModeId);
   };
 
   const handleGlitchConfigChange = (patch: Partial<GlitchConfig>) => {
@@ -149,20 +154,15 @@ const ModeCard = ({
         </div>
       </div>
       <div className="editor-kv">
-        <div className="editor-kv-row">
-          <span className="editor-kv-label">Preset</span>
-          <select
+        <div className="editor-kv-row editor-kv-row--full">
+          <Select
             className="editor-select"
             value={value}
             onChange={handleChange}
             disabled={disabled}
-          >
-            {MODE_DEFINITIONS.map((mode) => (
-              <option key={mode.id} value={mode.id}>
-                {mode.label}
-              </option>
-            ))}
-          </select>
+            ariaLabel="Mode"
+            options={MODE_OPTIONS}
+          />
         </div>
       </div>
       <p className="editor-help">{activeMode.description}</p>

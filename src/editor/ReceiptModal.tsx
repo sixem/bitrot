@@ -4,7 +4,12 @@ import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-shell";
 import { revealInFolder } from "@/system/reveal";
 import { splitOutputPath } from "@/jobs/output";
-import { getEncodingPreset, type EncodingId } from "@/jobs/encoding";
+import {
+  getFormatLabel,
+  getQualityLabel,
+  getVideoEncoderLabel,
+  type ExportProfile
+} from "@/jobs/exportProfile";
 import { getModeDefinition, type ModeId } from "@/modes/definitions";
 import formatBytes from "@/utils/formatBytes";
 import makeDebug from "@/utils/debug";
@@ -14,7 +19,7 @@ type ReceiptModalProps = {
   outputPath: string;
   inputSizeBytes?: number;
   modeId: ModeId;
-  encodingId: EncodingId;
+  profile: ExportProfile;
   onClose: () => void;
 };
 
@@ -26,7 +31,7 @@ const ReceiptModal = ({
   outputPath,
   inputSizeBytes,
   modeId,
-  encodingId,
+  profile,
   onClose
 }: ReceiptModalProps) => {
   const shouldCloseRef = useRef(false);
@@ -92,7 +97,10 @@ const ReceiptModal = ({
   const hasOutput = outputPath.trim().length > 0;
   const canCopy = typeof navigator?.clipboard?.writeText === "function";
   const mode = getModeDefinition(modeId);
-  const encoding = getEncodingPreset(encodingId);
+  const formatLabel = getFormatLabel(profile.format);
+  const encoderLabel = getVideoEncoderLabel(profile.videoEncoder);
+  const qualityLabel = getQualityLabel(profile.videoEncoder);
+  const audioLabel = profile.audioEnabled ? "On" : "Off";
   const hasInputSize =
     typeof inputSizeBytes === "number" && Number.isFinite(inputSizeBytes);
   const hasOutputSize =
@@ -191,8 +199,22 @@ const ReceiptModal = ({
             <span className="editor-kv-value">{mode.label}</span>
           </div>
           <div className="editor-kv-row">
-            <span className="editor-kv-label">Encoding</span>
-            <span className="editor-kv-value">{encoding.label}</span>
+            <span className="editor-kv-label">Format</span>
+            <span className="editor-kv-value">{formatLabel}</span>
+          </div>
+          <div className="editor-kv-row">
+            <span className="editor-kv-label">Encoder</span>
+            <span className="editor-kv-value">{encoderLabel}</span>
+          </div>
+          <div className="editor-kv-row">
+            <span className="editor-kv-label">Quality</span>
+            <span className="editor-kv-value">
+              {qualityLabel} {profile.quality}
+            </span>
+          </div>
+          <div className="editor-kv-row">
+            <span className="editor-kv-label">Audio</span>
+            <span className="editor-kv-value">{audioLabel}</span>
           </div>
           <div className="editor-kv-row">
             <span className="editor-kv-label">Size</span>

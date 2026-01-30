@@ -30,7 +30,7 @@ type PreviewToolbarProps = {
   showFrameMapAction: boolean;
   frameMapActionLabel: string;
   onRequestFrameMap: () => void;
-  showCopyTrimWarning: boolean;
+  showPassthroughTrimWarning: boolean;
   range?: ReactNode;
 };
 
@@ -57,7 +57,7 @@ const PreviewToolbar = ({
   showFrameMapAction,
   frameMapActionLabel,
   onRequestFrameMap,
-  showCopyTrimWarning,
+  showPassthroughTrimWarning,
   range
 }: PreviewToolbarProps) => (
   <div className="preview-toolbar">
@@ -149,9 +149,9 @@ const PreviewToolbar = ({
         )}
       </div>
     )}
-    {showCopyTrimWarning && (
+    {showPassthroughTrimWarning && (
       <div className="preview-warning">
-        Copy mode trim requires re-encoding for frame-accurate cuts.
+        Passthrough trim requires re-encoding for frame-accurate cuts.
       </div>
     )}
     {range}

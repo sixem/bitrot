@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { convertFileSrc, invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
-import type { FrameMap } from "@/analysis/frameMap";
+import { convertFileSrc } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { VideoAsset } from "@/domain/video";
 import type { VideoMetadata } from "@/system/ffprobe";
-import type { TrimSelectionState } from "@/editor/useTrimSelection";
+import type { FramePreviewRequest } from "@/editor/preview/types";
+import { sendPixelsortPreviewFrame } from "@/editor/preview/sendPixelsortPreviewFrame";
 import { getModeDefinition, type ModeConfigMap, type ModeId } from "@/modes/definitions";
 import type { PixelsortConfig } from "@/modes/pixelsort";
 import { cleanupPreviewFile, registerPreviewFile } from "@/system/previewFiles";
@@ -15,11 +15,9 @@ type FramePreviewOptions = {
   modeId: ModeId;
   modeConfig: ModeConfigMap[ModeId];
   metadata?: VideoMetadata;
-  frameMap?: FrameMap;
   // Used to scope live preview events to the active pixelsort job.
   jobId?: string;
   isProcessing: boolean;
-  trim?: TrimSelectionState;
 };
 
 export type FramePreviewControl = {
@@ -30,7 +28,7 @@ export type FramePreviewControl = {
   label: string;
   previewUrl?: string;
   error?: string;
-  onRequest: (timeSeconds: number) => void;
+  onRequest: (request: FramePreviewRequest) => void;
   onClear: () => void;
 };
 
@@ -38,7 +36,6 @@ type PreviewState = {
   isActive: boolean;
   isLoading: boolean;
   previewUrl?: string;
-  previewPath?: string;
   frame?: number;
   error?: string;
 };
@@ -49,11 +46,8 @@ type PixelsortPreviewPayload = {
   path: string;
 };
 
-type PixelsortPreviewResponse = {
-  path: string;
-};
-
 const debug = makeDebug("preview:frame");
+const appWindow = getCurrentWindow();
 
 // Hook that owns on-demand and live preview frames for native preview modes.
 
@@ -63,31 +57,23 @@ const supportsPixelsortPreview = (modeId: ModeId) =>
 const buildPreviewUrl = (path: string) =>
   `${convertFileSrc(path)}?v=${Date.now()}`;
 
-// Finds the closest keyframe time at or before the requested time.
-const findKeyframeAnchor = (keyframes: Float64Array, timeSeconds: number) => {
-  if (keyframes.length === 0) {
-    return undefined;
-  }
-  if (!Number.isFinite(timeSeconds) || timeSeconds <= keyframes[0]) {
-    return keyframes[0];
-  }
-
-  let low = 0;
-  let high = keyframes.length - 1;
-  let best = keyframes[0];
-
-  while (low <= high) {
-    const mid = Math.floor((low + high) / 2);
-    const value = keyframes[mid];
-    if (value <= timeSeconds) {
-      best = value;
-      low = mid + 1;
-    } else {
-      high = mid - 1;
+// Wraps a promise with a timeout so preview capture can fail gracefully.
+const awaitWithTimeout = async <T>(promise: Promise<T>, timeoutMs: number) => {
+  let timeoutId: number | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        timeoutId = window.setTimeout(() => {
+          reject(new Error(`Preview capture timed out after ${timeoutMs}ms.`));
+        }, timeoutMs);
+      })
+    ]);
+  } finally {
+    if (timeoutId !== undefined) {
+      window.clearTimeout(timeoutId);
     }
   }
-
-  return best;
 };
 
 // Manages frame preview state for non-ffmpeg modes (currently pixelsort).
@@ -96,10 +82,8 @@ const useFramePreview = ({
   modeId,
   modeConfig,
   metadata,
-  frameMap,
   jobId,
-  isProcessing,
-  trim
+  isProcessing
 }: FramePreviewOptions): FramePreviewControl => {
   const isSupported = supportsPixelsortPreview(modeId);
   const [manualPreview, setManualPreview] = useState<PreviewState>({
@@ -137,6 +121,8 @@ const useFramePreview = ({
   }, []);
 
   useEffect(() => {
+    // React 18 StrictMode mounts/unmounts effects twice in dev; reset the flag on mount.
+    isMountedRef.current = true;
     return () => {
       isMountedRef.current = false;
       const manualPath = manualPreviewPathRef.current;
@@ -162,10 +148,9 @@ const useFramePreview = ({
       clearManualPreview("preview unsupported");
       return;
     }
-    if (manualPreview.isActive) {
-      clearManualPreview("preview config change");
-    }
-  }, [isSupported, modeConfig, manualPreview.isActive, clearManualPreview]);
+    // Reset manual previews when the config changes to avoid mismatched frames.
+    clearManualPreview("preview config change");
+  }, [isSupported, modeConfig, clearManualPreview]);
 
   useEffect(() => {
     if (!isSupported || !isProcessing) {
@@ -176,7 +161,8 @@ const useFramePreview = ({
     let isMounted = true;
     let unlisten: (() => void) | undefined;
 
-    listen<PixelsortPreviewPayload>("pixelsort-preview", (event) => {
+    // Listen on the current window because Rust emits preview events window-scoped.
+    appWindow.listen<PixelsortPreviewPayload>("pixelsort-preview", (event) => {
       if (!isMounted) {
         return;
       }
@@ -194,7 +180,6 @@ const useFramePreview = ({
         isActive: true,
         isLoading: false,
         previewUrl: buildPreviewUrl(nextPath),
-        previewPath: nextPath,
         frame: event.payload.frame
       });
     })
@@ -218,23 +203,13 @@ const useFramePreview = ({
   }, [clearLivePreview, isProcessing, isSupported, jobId]);
 
   const requestPreview = useCallback(
-    async (timeSeconds: number) => {
-      if (!isSupported || !asset.path || !metadata) {
-        setManualPreview((prev) => ({
-          ...prev,
+    async (request: FramePreviewRequest) => {
+      if (!isSupported) {
+        setManualPreview({
           isActive: true,
           isLoading: false,
-          error: "Preview requires loaded metadata."
-        }));
-        return;
-      }
-      if (!metadata.width || !metadata.height) {
-        setManualPreview((prev) => ({
-          ...prev,
-          isActive: true,
-          isLoading: false,
-          error: "Preview requires video dimensions."
-        }));
+          error: "Preview is not available for this mode."
+        });
         return;
       }
 
@@ -245,75 +220,110 @@ const useFramePreview = ({
         error: undefined
       }));
 
-      const clampedTime = Number.isFinite(metadata.durationSeconds)
-        ? Math.min(Math.max(0, timeSeconds), metadata.durationSeconds ?? timeSeconds)
-        : Math.max(0, timeSeconds);
-      const durationSeconds = metadata.durationSeconds;
-      const fps = metadata.fps;
-      const epsilon =
-        typeof fps === "number" && Number.isFinite(fps) && fps > 0
-          ? 1 / fps
-          : 0.033;
-      const safeTime =
-        typeof durationSeconds === "number" &&
-        Number.isFinite(durationSeconds) &&
-        durationSeconds > 0
-          ? Math.min(clampedTime, Math.max(0, durationSeconds - epsilon))
-          : clampedTime;
-      const trimStart = trim?.start;
-      const trimEnd = trim?.end;
-      const trimActive =
-        !!trim?.enabled &&
-        !!trim.isValid &&
-        typeof trimStart === "number" &&
-        typeof trimEnd === "number";
-      const trimmedTime = trimActive
-        ? Math.min(
-            Math.max(safeTime, trimStart),
-            Math.max(trimStart, trimEnd - epsilon)
-          )
-        : safeTime;
-      const keyframeSeconds = frameMap?.keyframeTimes
-        ? findKeyframeAnchor(frameMap.keyframeTimes, trimmedTime)
-        : undefined;
+      const requestId = requestIdRef.current + 1;
+      requestIdRef.current = requestId;
+
+      let payload;
+      try {
+        payload = await awaitWithTimeout(request.frame, 2000);
+      } catch (error) {
+        if (!isMountedRef.current || requestId !== requestIdRef.current) {
+          return;
+        }
+        const message =
+          error instanceof Error ? error.message : "Preview capture failed.";
+        debug("preview capture failed: %O", error);
+        setManualPreview((prev) => ({
+          ...prev,
+          isActive: true,
+          isLoading: false,
+          error: message
+        }));
+        return;
+      }
+
+      if (!payload) {
+        if (!isMountedRef.current || requestId !== requestIdRef.current) {
+          return;
+        }
+        setManualPreview((prev) => ({
+          ...prev,
+          isActive: true,
+          isLoading: false,
+          error: "Preview capture failed."
+        }));
+        return;
+      }
+
+      if (!isMountedRef.current || requestId !== requestIdRef.current) {
+        return;
+      }
+
+      const { width, height, data } = payload;
+      if (!width || !height || data.length === 0) {
+        setManualPreview((prev) => ({
+          ...prev,
+          isActive: true,
+          isLoading: false,
+          error: "Preview buffer is empty."
+        }));
+        return;
+      }
+      const expected = width * height * 4;
+      if (!Number.isFinite(expected) || data.length !== expected) {
+        setManualPreview((prev) => ({
+          ...prev,
+          isActive: true,
+          isLoading: false,
+          error: "Preview buffer size mismatch."
+        }));
+        return;
+      }
 
       try {
-        const requestId = requestIdRef.current + 1;
-        requestIdRef.current = requestId;
-        const response = await invoke<PixelsortPreviewResponse>("pixelsort_preview", {
-          inputPath: asset.path,
-          timeSeconds: trimmedTime,
-          keyframeSeconds,
-          width: metadata.width,
-          height: metadata.height,
-          config: modeConfig as PixelsortConfig
-        });
+        const isStale = () =>
+          !isMountedRef.current || requestId !== requestIdRef.current;
+        const responsePath = await sendPixelsortPreviewFrame(
+          { width, height, data },
+          modeConfig as PixelsortConfig,
+          { shouldAbort: isStale }
+        );
 
-        if (!isMountedRef.current || requestId !== requestIdRef.current) {
-          void cleanupPreviewFile(response.path, "preview stale");
+        if (isStale()) {
+          void cleanupPreviewFile(responsePath, "preview stale");
           return;
         }
 
-        registerPreviewFile(response.path);
+        registerPreviewFile(responsePath);
         const previousPath = manualPreviewPathRef.current;
-        manualPreviewPathRef.current = response.path;
-        if (previousPath && previousPath !== response.path) {
+        manualPreviewPathRef.current = responsePath;
+        if (previousPath && previousPath !== responsePath) {
           void cleanupPreviewFile(previousPath, "preview replaced");
         }
 
+        const clampedTime = Number.isFinite(request.timeSeconds)
+          ? Math.max(0, request.timeSeconds)
+          : 0;
+        const boundedTime =
+          typeof metadata?.durationSeconds === "number" &&
+          Number.isFinite(metadata.durationSeconds)
+            ? Math.min(clampedTime, metadata.durationSeconds)
+            : clampedTime;
         const frame =
-          typeof metadata.fps === "number" && Number.isFinite(metadata.fps)
-            ? Math.max(0, Math.round(trimmedTime * metadata.fps))
+          typeof metadata?.fps === "number" && Number.isFinite(metadata.fps)
+            ? Math.max(0, Math.round(boundedTime * metadata.fps))
             : undefined;
 
         setManualPreview({
           isActive: true,
           isLoading: false,
-          previewUrl: buildPreviewUrl(response.path),
-          previewPath: response.path,
+          previewUrl: buildPreviewUrl(responsePath),
           frame
         });
       } catch (error) {
+        if (!isMountedRef.current || requestId !== requestIdRef.current) {
+          return;
+        }
         const message =
           error instanceof Error ? error.message : "Preview render failed.";
         debug("preview failed: %O", error);
@@ -325,7 +335,7 @@ const useFramePreview = ({
         }));
       }
     },
-    [asset.path, frameMap?.keyframeTimes, isSupported, metadata, modeConfig, trim]
+    [isSupported, metadata?.durationSeconds, metadata?.fps, modeConfig]
   );
 
   const clearPreview = useCallback(() => {
@@ -341,7 +351,7 @@ const useFramePreview = ({
     ? frameLabel ?? "Previewing frame..."
     : manualPreview.isActive
       ? "Show original"
-      : "Preview frame (estimate)";
+      : "Preview frame";
   const isLoading = previewState.isLoading;
 
   return useMemo(

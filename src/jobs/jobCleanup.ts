@@ -1,3 +1,4 @@
+// Central registry for cleaning temp outputs produced by job runners.
 import { getModeDefinition, type ModeId } from "@/modes/definitions";
 import { splitOutputPath, joinOutputPath } from "@/jobs/output";
 import { getDatamoshTempPaths } from "@/jobs/datamoshRunner";
@@ -17,7 +18,8 @@ const buildPixelsortTempPath = (outputPath: string) => {
   const { folder, fileName, separator } = splitOutputPath(outputPath);
   const dotIndex = fileName.lastIndexOf(".");
   const stem = dotIndex > 0 ? fileName.slice(0, dotIndex) : fileName || "pixelsort";
-  const tempFile = `${stem}.pixelsort.video.mp4`;
+  const extension = dotIndex > 0 ? fileName.slice(dotIndex + 1) : "mp4";
+  const tempFile = `${stem}.pixelsort.video.${extension}`;
   return joinOutputPath(folder, tempFile, separator);
 };
 

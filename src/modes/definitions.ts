@@ -123,8 +123,8 @@ export const MODE_DEFINITIONS: ModeDefinition[] = [
   },
   {
     id: "copy",
-    label: "Copy (no effect)",
-    description: "Pass-through export with no visual processing applied.",
+    label: "Passthrough",
+    description: "No effects. Stream copy when possible for fastest exports.",
     engine: "ffmpeg",
     runner: "ffmpeg",
     defaultConfig: {},

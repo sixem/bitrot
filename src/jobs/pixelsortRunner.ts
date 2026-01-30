@@ -1,16 +1,22 @@
+// Tauri bridge for the Rust pixel sort pipeline with progress + log wiring.
 import { invoke } from "@tauri-apps/api/core";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { VideoAsset } from "@/domain/video";
 import type { JobProgress } from "@/jobs/types";
 import { pathsMatch } from "@/jobs/output";
 import { normalizeTrimRange } from "@/jobs/trim";
 import { probeVideo } from "@/system/ffprobe";
 import {
-  DEFAULT_ENCODING_ID,
-  estimateBitrateCapKbps,
-  getEncodingPreset,
-  type EncodingId
-} from "@/jobs/encoding";
+  estimateInputBitrateCapKbps,
+  estimateTargetBitrateKbps
+} from "@/jobs/exportEncoding";
+import {
+  resolveNvencPreset,
+  resolveVp9Settings,
+  resolveX264Preset,
+  DEFAULT_EXPORT_PROFILE,
+  type ExportProfile
+} from "@/jobs/exportProfile";
 import type { PixelsortConfig } from "@/modes/pixelsort";
 import { sanitizePath } from "@/system/path";
 import makeDebug from "@/utils/debug";
@@ -46,6 +52,7 @@ type PixelsortLogPayload = {
 };
 
 const debug = makeDebug("jobs:pixelsort");
+const appWindow = getCurrentWindow();
 
 const createJobId = () =>
   `pixelsort-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
@@ -91,11 +98,18 @@ const resolveDimensions = (width?: number, height?: number) => {
   };
 };
 
+const resolveAudioCodec = (format: string) =>
+  format === "webm" ? "opus" : "aac";
+
+const resolveAudioBitrateKbps = (format: string) =>
+  format === "webm" ? 160 : 192;
+
 const attachPixelsortListeners = async (
   jobId: string,
   callbacks: PixelsortCallbacks
 ) => {
-  const progressUnlisten = await listen<PixelsortProgressPayload>(
+  // Rust emits these updates on the window, so attach window-scoped listeners.
+  const progressUnlisten = await appWindow.listen<PixelsortProgressPayload>(
     "pixelsort-progress",
     (event) => {
       if (event.payload.jobId !== jobId) {
@@ -128,7 +142,7 @@ const attachPixelsortListeners = async (
     }
   );
 
-  const logUnlisten = await listen<PixelsortLogPayload>(
+  const logUnlisten = await appWindow.listen<PixelsortLogPayload>(
     "pixelsort-log",
     (event) => {
       if (event.payload.jobId !== jobId) {
@@ -153,7 +167,7 @@ export const runPixelsortJob = async (
   outputPath: string,
   durationSeconds: number | undefined,
   config: PixelsortConfig,
-  encodingId: EncodingId,
+  profile: ExportProfile,
   trimStartSeconds: number | undefined,
   trimEndSeconds: number | undefined,
   callbacks: PixelsortCallbacks
@@ -185,12 +199,30 @@ export const runPixelsortJob = async (
     callbacks.onLog(`Adjusted dimensions to even size: ${width}x${height}.`);
   }
 
-  const encoding = getEncodingPreset(encodingId ?? DEFAULT_ENCODING_ID);
-  const bitrateCapKbps = estimateBitrateCapKbps(
+  const resolvedProfile = profile ?? DEFAULT_EXPORT_PROFILE;
+  const bitrateCapKbps = estimateInputBitrateCapKbps(
     metadata.sizeBytes,
-    metadata.durationSeconds,
-    encoding
+    metadata.durationSeconds
   );
+  const targetBitrateKbps = estimateTargetBitrateKbps(
+    resolvedProfile.sizeCapMb,
+    resolvedDuration
+  );
+  const maxBitrateKbps = targetBitrateKbps ?? bitrateCapKbps;
+  const vp9Settings =
+    resolvedProfile.videoEncoder === "libvpx-vp9"
+      ? resolveVp9Settings(resolvedProfile.videoSpeed)
+      : null;
+  const wantsTwoPass =
+    resolvedProfile.videoEncoder === "libvpx-vp9" &&
+    (resolvedProfile.passMode === "2pass" ||
+      (resolvedProfile.passMode === "auto" &&
+        resolvedProfile.sizeCapMb !== undefined));
+  if (wantsTwoPass) {
+    callbacks.onLog(
+      "VP9 two-pass is not supported for pixel sort yet. Using single-pass output."
+    );
+  }
   callbacks.onProgress({ percent: 0 });
 
   const stopListening = await attachPixelsortListeners(jobId, callbacks);
@@ -209,11 +241,40 @@ export const runPixelsortJob = async (
     trimStartSeconds: trimRange?.start,
     trimEndSeconds: trimRange?.end,
     encoding: {
-      encoder: encoding.encoder,
-      preset: encoding.preset,
-      crf: encoding.crf,
-      cq: encoding.cq,
-      maxBitrateKbps: bitrateCapKbps
+      encoder: resolvedProfile.videoEncoder,
+      preset:
+        resolvedProfile.videoEncoder === "h264_nvenc"
+          ? resolveNvencPreset(resolvedProfile.videoSpeed)
+          : resolvedProfile.videoEncoder === "libvpx-vp9"
+            ? vp9Settings?.deadline ?? "good"
+            : resolveX264Preset(resolvedProfile.videoSpeed),
+      crf:
+        resolvedProfile.videoEncoder === "libx264" ||
+        resolvedProfile.videoEncoder === "libvpx-vp9"
+          ? resolvedProfile.quality
+          : undefined,
+      cq:
+        resolvedProfile.videoEncoder === "h264_nvenc"
+          ? resolvedProfile.quality
+          : undefined,
+      maxBitrateKbps,
+      targetBitrateKbps,
+      vp9Deadline:
+        resolvedProfile.videoEncoder === "libvpx-vp9"
+          ? vp9Settings?.deadline
+          : undefined,
+      vp9CpuUsed:
+        resolvedProfile.videoEncoder === "libvpx-vp9"
+          ? vp9Settings?.cpuUsed
+          : undefined,
+      format: resolvedProfile.format,
+      audioEnabled: resolvedProfile.audioEnabled,
+      audioCodec: resolvedProfile.audioEnabled
+        ? resolveAudioCodec(resolvedProfile.format)
+        : undefined,
+      audioBitrateKbps: resolvedProfile.audioEnabled
+        ? resolveAudioBitrateKbps(resolvedProfile.format)
+        : undefined
     }
   });
 

@@ -1,10 +1,17 @@
 import type { PixelsortConfig, PixelsortDirection } from "@/modes/pixelsort";
+import Select from "@/ui/controls/Select";
 
 type PixelsortControlsProps = {
   config: PixelsortConfig;
   onChange: (patch: Partial<PixelsortConfig>) => void;
   disabled?: boolean;
 };
+
+const DIRECTION_OPTIONS = [
+  { value: "horizontal", label: "Horizontal" },
+  { value: "vertical", label: "Vertical" },
+  { value: "block", label: "Block" }
+];
 
 // Controls for the pixelsort mode.
 const PixelsortControls = ({ config, onChange, disabled }: PixelsortControlsProps) => (
@@ -63,18 +70,15 @@ const PixelsortControls = ({ config, onChange, disabled }: PixelsortControlsProp
     </label>
     <label className="mode-control">
       <span className="mode-control-label">Direction</span>
-      <select
+      <Select
         className="editor-select"
         value={config.direction}
-        onChange={(event) =>
-          onChange({ direction: event.target.value as PixelsortDirection })
+        onChange={(nextValue) =>
+          onChange({ direction: nextValue as PixelsortDirection })
         }
         disabled={disabled}
-      >
-        <option value="horizontal">Horizontal</option>
-        <option value="vertical">Vertical</option>
-        <option value="block">Block</option>
-      </select>
+        options={DIRECTION_OPTIONS}
+      />
     </label>
   </div>
 );

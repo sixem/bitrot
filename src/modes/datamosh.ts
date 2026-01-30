@@ -12,7 +12,7 @@ export const defaultDatamoshConfig: DatamoshConfig = {
   intensity: 75,
   moshLengthSeconds: 0,
   sceneThreshold: 0.3,
-  // MPEG-4 Part 2 caps keyint near 600; anything above is wasted.
-  gopSize: 600,
+  // Shorter GOP gives tighter, choppier mosh bursts by default.
+  gopSize: 15,
   seed: 0
 };

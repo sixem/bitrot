@@ -24,7 +24,7 @@ const PreviewScrubber = ({
 
   return (
     <input
-      className="preview-scrub"
+      className="preview-scrub range-input"
       type="range"
       min={0}
       max={max}

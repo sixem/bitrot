@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import makeDebug from "@/utils/debug";
 
 type ProgramId = "ffmpeg" | "ffprobe";
@@ -30,6 +30,7 @@ export type CommandHandle = {
 type CommandBinder = (command: CommandHandle, source: CommandSource) => void;
 
 const debug = makeDebug("system:shell");
+const appWindow = getCurrentWindow();
 
 const EVENTS = {
   stdout: "ffmpeg-stdout",
@@ -123,25 +124,26 @@ const createCommand = (): CommandEmitter => {
 };
 
 const attachListeners = async (jobId: string, command: CommandEmitter) => {
-  const unlistenStdout = await listen<StreamPayload>(EVENTS.stdout, (event) => {
+  // Listen on the current window because Rust emits job events window-scoped.
+  const unlistenStdout = await appWindow.listen<StreamPayload>(EVENTS.stdout, (event) => {
     if (event.payload.jobId === jobId) {
       command.emitStdout(event.payload.data);
     }
   });
 
-  const unlistenStderr = await listen<StreamPayload>(EVENTS.stderr, (event) => {
+  const unlistenStderr = await appWindow.listen<StreamPayload>(EVENTS.stderr, (event) => {
     if (event.payload.jobId === jobId) {
       command.emitStderr(event.payload.data);
     }
   });
 
-  const unlistenError = await listen<ErrorPayload>(EVENTS.error, (event) => {
+  const unlistenError = await appWindow.listen<ErrorPayload>(EVENTS.error, (event) => {
     if (event.payload.jobId === jobId) {
       command.emitError(event.payload.message);
     }
   });
 
-  const unlistenClose = await listen<ClosePayload>(EVENTS.close, (event) => {
+  const unlistenClose = await appWindow.listen<ClosePayload>(EVENTS.close, (event) => {
     if (event.payload.jobId === jobId) {
       command.emitClose({
         code: event.payload.code ?? null,
@@ -199,7 +201,10 @@ export const spawnWithFallback = async (
   command.on("error", finalize);
 
   const child = {
-    kill: () => invoke("ffmpeg_kill", { jobId })
+    // Normalize the kill return type so callers can treat it as Promise<void>.
+    kill: async () => {
+      await invoke("ffmpeg_kill", { jobId });
+    }
   };
 
   return { command, child, source: response.source };

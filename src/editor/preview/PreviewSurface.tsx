@@ -51,6 +51,7 @@ const PreviewSurface = ({
         className="preview-video"
         src={sourceUrl}
         preload="metadata"
+        crossOrigin="anonymous"
         playsInline
         onLoadedMetadata={onLoadedMetadata}
         onTimeUpdate={onTimeUpdate}
