@@ -1,5 +1,6 @@
 import { useEffect, useRef, type MouseEvent } from "react";
 import { createPortal } from "react-dom";
+import useModalScrollLock from "@/ui/modal/useModalScrollLock";
 
 type ModalProps = {
   isOpen: boolean;
@@ -24,6 +25,7 @@ const Modal = ({
   onClose
 }: ModalProps) => {
   const shouldCloseRef = useRef(false);
+  useModalScrollLock(isOpen);
   const handleConfirm = () => {
     if (onConfirm) {
       onConfirm();

@@ -1,13 +1,17 @@
-import { createPortal } from "react-dom";
 import {
   useCallback,
   useEffect,
   useMemo,
   useRef,
   useState,
-  type KeyboardEvent,
   type ReactNode
 } from "react";
+import SelectMenu from "@/ui/controls/select/SelectMenu";
+import {
+  createSelectKeyHandler,
+  findFirstEnabledIndex
+} from "@/ui/controls/select/selectKeyboard";
+import { buildMenuStyle, type MenuStyle } from "@/ui/controls/select/selectPosition";
 
 export type SelectOption = {
   value: string;
@@ -38,78 +42,8 @@ type SelectProps = {
   customInputActive?: boolean;
 };
 
-type MenuStyle = {
-  top: number;
-  left: number;
-  width: number;
-  maxHeight: number;
-};
-
-const MENU_MAX_HEIGHT = 240;
-const MENU_MIN_HEIGHT = 120;
-const MENU_GUTTER = 8;
-const MENU_GAP = 6;
-
 const cx = (...values: Array<string | undefined>) =>
   values.filter(Boolean).join(" ");
-
-const findEnabledIndex = (options: SelectOption[], start: number, delta: number) => {
-  if (options.length === 0) {
-    return null;
-  }
-  let index = start;
-  for (let i = 0; i < options.length; i += 1) {
-    index = (index + delta + options.length) % options.length;
-    if (!options[index].disabled) {
-      return index;
-    }
-  }
-  return null;
-};
-
-const findFirstEnabledIndex = (options: SelectOption[]) =>
-  options.findIndex((option) => !option.disabled);
-
-const findLastEnabledIndex = (options: SelectOption[]) => {
-  for (let i = options.length - 1; i >= 0; i -= 1) {
-    if (!options[i].disabled) {
-      return i;
-    }
-  }
-  return -1;
-};
-
-const buildMenuStyle = (triggerRect: DOMRect): MenuStyle => {
-  const availableBelow = Math.max(
-    0,
-    window.innerHeight - triggerRect.bottom - MENU_GAP - MENU_GUTTER
-  );
-  const availableAbove = Math.max(0, triggerRect.top - MENU_GAP - MENU_GUTTER);
-  const openUpwards = availableBelow < MENU_MIN_HEIGHT && availableAbove > availableBelow;
-  const width = triggerRect.width;
-  const left = Math.min(
-    Math.max(MENU_GUTTER, triggerRect.left),
-    window.innerWidth - width - MENU_GUTTER
-  );
-
-  if (openUpwards) {
-    const maxHeight = Math.min(MENU_MAX_HEIGHT, availableAbove);
-    return {
-      width,
-      left,
-      maxHeight,
-      top: triggerRect.top - MENU_GAP - maxHeight
-    };
-  }
-
-  const maxHeight = Math.min(MENU_MAX_HEIGHT, availableBelow);
-  return {
-    width,
-    left,
-    maxHeight,
-    top: triggerRect.bottom + MENU_GAP
-  };
-};
 
 // Reusable custom select that mirrors native behavior with a styled listbox.
 const Select = ({
@@ -257,16 +191,19 @@ const Select = ({
     setIsOpen((prev) => !prev);
   };
 
-  const handleOptionSelect = (nextValue: string, isDisabled?: boolean) => {
-    if (isDisabled) {
-      return;
-    }
-    if (nextValue !== value) {
-      onChange(nextValue);
-    }
-    closeMenu();
-    triggerRef.current?.focus();
-  };
+  const handleOptionSelect = useCallback(
+    (nextValue: string, isDisabled?: boolean) => {
+      if (isDisabled) {
+        return;
+      }
+      if (nextValue !== value) {
+        onChange(nextValue);
+      }
+      closeMenu();
+      triggerRef.current?.focus();
+    },
+    [closeMenu, onChange, value]
+  );
 
   const handleCustomActivate = () => {
     if (!customInput) {
@@ -288,167 +225,47 @@ const Select = ({
     triggerRef.current?.focus();
   };
 
-  const handleKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
-    if (disabled) {
-      return;
-    }
-    switch (event.key) {
-      case "ArrowDown": {
-        event.preventDefault();
-        if (!isOpen) {
-          openMenu();
-          return;
-        }
-        setHighlightedIndex((prev) => {
-          const start = prev ?? -1;
-          return findEnabledIndex(options, start, 1);
-        });
-        return;
-      }
-      case "ArrowUp": {
-        event.preventDefault();
-        if (!isOpen) {
-          openMenu();
-          return;
-        }
-        setHighlightedIndex((prev) => {
-          const start = prev ?? options.length;
-          return findEnabledIndex(options, start, -1);
-        });
-        return;
-      }
-      case "Home": {
-        event.preventDefault();
-        setHighlightedIndex(findFirstEnabledIndex(options));
-        if (!isOpen) {
-          openMenu();
-        }
-        return;
-      }
-      case "End": {
-        event.preventDefault();
-        setHighlightedIndex(findLastEnabledIndex(options));
-        if (!isOpen) {
-          openMenu();
-        }
-        return;
-      }
-      case "Enter":
-      case " ": {
-        event.preventDefault();
-        if (!isOpen) {
-          openMenu();
-          return;
-        }
-        if (highlightedIndex === null) {
-          closeMenu();
-          return;
-        }
-        const option = options[highlightedIndex];
-        if (option) {
-          handleOptionSelect(option.value, option.disabled);
-        }
-        return;
-      }
-      case "Escape": {
-        if (isOpen) {
-          event.preventDefault();
-          closeMenu();
-        }
-        return;
-      }
-      default:
-        break;
-    }
-  };
+  const handleKeyDown = useMemo(
+    () =>
+      createSelectKeyHandler({
+        disabled,
+        isOpen,
+        options,
+        highlightedIndex,
+        openMenu,
+        closeMenu,
+        onSelect: handleOptionSelect,
+        setHighlightedIndex
+      }),
+    [
+      closeMenu,
+      disabled,
+      handleOptionSelect,
+      highlightedIndex,
+      isOpen,
+      openMenu,
+      options
+    ]
+  );
 
-  const menu = isOpen && menuStyle
-    ? createPortal(
-        <div
-          className="ui-select-menu scrollable"
-          style={{
-            top: `${menuStyle.top}px`,
-            left: `${menuStyle.left}px`,
-            width: `${menuStyle.width}px`,
-            maxHeight: `${menuStyle.maxHeight}px`
-          }}
-          role="listbox"
-          aria-label={ariaLabel}
-          aria-labelledby={ariaLabelledBy}
-          ref={menuRef}
-        >
-          {options.map((option, index) => (
-            <button
-              key={option.value}
-              type="button"
-              className="ui-select-option"
-              role="option"
-              aria-selected={option.value === value}
-              data-selected={option.value === value}
-              data-disabled={option.disabled}
-              data-option-index={index}
-              disabled={option.disabled}
-              onClick={() => handleOptionSelect(option.value, option.disabled)}
-              onMouseEnter={() => setHighlightedIndex(index)}
-            >
-              {option.label}
-            </button>
-          ))}
-          {customInput && (
-            <div className="ui-select-custom" data-active={isCustomEditing}>
-              {!isCustomEditing ? (
-                <button
-                  type="button"
-                  className="ui-select-option ui-select-custom-toggle"
-                  onClick={handleCustomActivate}
-                >
-                  <span className="ui-select-custom-label">{customInput.label}</span>
-                  {customInput.value ? (
-                    <span className="ui-select-custom-value">
-                      {customInput.value}
-                      {customInput.unit ? ` ${customInput.unit}` : ""}
-                    </span>
-                  ) : null}
-                </button>
-              ) : (
-                <div className="ui-select-custom-input">
-                  <input
-                    ref={customInputRef}
-                    className="ui-select-custom-field"
-                    type="number"
-                    inputMode="numeric"
-                    value={customInput.value}
-                    placeholder={customInput.placeholder}
-                    onChange={(event) => customInput.onValueChange(event.target.value)}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter") {
-                        event.preventDefault();
-                        commitCustomValue();
-                      }
-                      if (event.key === "Escape") {
-                        event.preventDefault();
-                        closeMenu();
-                      }
-                    }}
-                    onBlur={(event) => {
-                      const nextTarget = event.relatedTarget as Node | null;
-                      if (nextTarget && menuRef.current?.contains(nextTarget)) {
-                        return;
-                      }
-                      commitCustomValue();
-                    }}
-                  />
-                  {customInput.unit ? (
-                    <span className="ui-select-custom-unit">{customInput.unit}</span>
-                  ) : null}
-                </div>
-              )}
-            </div>
-          )}
-        </div>,
-        document.body
-      )
-    : null;
+  const menu = isOpen && menuStyle ? (
+    <SelectMenu
+      menuStyle={menuStyle}
+      options={options}
+      value={value}
+      ariaLabel={ariaLabel}
+      ariaLabelledBy={ariaLabelledBy}
+      menuRef={menuRef}
+      customInputRef={customInputRef}
+      customInput={customInput}
+      isCustomEditing={isCustomEditing}
+      onOptionSelect={handleOptionSelect}
+      onHighlightIndex={setHighlightedIndex}
+      onCustomActivate={handleCustomActivate}
+      onCustomCommit={commitCustomValue}
+      onCloseMenu={closeMenu}
+    />
+  ) : null;
 
   return (
     <div className="ui-select" data-open={isOpen} data-disabled={disabled}>
