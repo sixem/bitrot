@@ -44,8 +44,7 @@ impl ModuloMappingJobs {
   }
 }
 
-#[tauri::command]
-pub async fn modulo_mapping_cancel(
+pub(super) async fn modulo_mapping_cancel(
   job_id: String,
   state: State<'_, ModuloMappingJobs>
 ) -> Result<(), String> {

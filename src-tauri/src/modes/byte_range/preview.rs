@@ -91,8 +91,7 @@ async fn render_modulo_mapping_preview(
 }
 
 // Chunked manual preview uploads keep IPC payloads well under size limits.
-#[tauri::command]
-pub fn modulo_mapping_preview_start(
+pub(super) fn modulo_mapping_preview_start(
   preview_id: String,
   width: u32,
   height: u32,
@@ -102,8 +101,7 @@ pub fn modulo_mapping_preview_start(
   state.start(&preview_id, width, height, expected_len)
 }
 
-#[tauri::command]
-pub fn modulo_mapping_preview_append(
+pub(super) fn modulo_mapping_preview_append(
   preview_id: String,
   chunk: Vec<u8>,
   state: State<'_, PreviewBuffers>
@@ -114,8 +112,7 @@ pub fn modulo_mapping_preview_append(
   state.append(&preview_id, chunk)
 }
 
-#[tauri::command]
-pub async fn modulo_mapping_preview_finish(
+pub(super) async fn modulo_mapping_preview_finish(
   app: AppHandle,
   preview_id: String,
   config: ModuloMappingConfig,
@@ -133,8 +130,7 @@ pub async fn modulo_mapping_preview_finish(
     .await
 }
 
-#[tauri::command]
-pub fn modulo_mapping_preview_discard(
+pub(super) fn modulo_mapping_preview_discard(
   preview_id: String,
   state: State<'_, PreviewBuffers>
 ) -> Result<(), String> {

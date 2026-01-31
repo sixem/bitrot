@@ -1,5 +1,5 @@
 // Pixel math + per-frame processing for the modulo mapping effect.
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]

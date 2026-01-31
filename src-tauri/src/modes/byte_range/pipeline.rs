@@ -120,8 +120,7 @@ async fn read_until_terminated(
   Ok(code.unwrap_or(-1))
 }
 
-#[tauri::command]
-pub async fn modulo_mapping_process(
+pub(super) async fn modulo_mapping_process(
   window: Window,
   app: AppHandle,
   state: State<'_, ModuloMappingJobs>,
