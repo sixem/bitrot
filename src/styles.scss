@@ -5,10 +5,16 @@
 @forward "./styles/controls";
 @forward "./styles/surfaces";
 @forward "./styles/landing";
-@forward "./styles/editor";
+@forward "./styles/editor.modal";
+@forward "./styles/editor.export";
+@forward "./styles/editor.mode";
+@forward "./styles/editor.layout";
 
 @use "./styles/base";
 @use "./styles/controls";
 @use "./styles/surfaces";
 @use "./styles/landing";
-@use "./styles/editor";
+@use "./styles/editor.modal";
+@use "./styles/editor.export";
+@use "./styles/editor.mode";
+@use "./styles/editor.layout";

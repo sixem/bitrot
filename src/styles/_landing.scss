@@ -13,6 +13,8 @@
   text-align: center;
   position: relative;
   overflow: hidden;
+  // Animated, low-contrast tint adds life without lifting the black base.
+  background: var(--bg);
 
   .app-content {
     width: 100%;
@@ -30,6 +32,69 @@
       opacity: 0.45;
       transform: scale(0.985);
     }
+  }
+}
+
+// Subtle ambient gradient motion for the landing background.
+.app::before,
+.app::after {
+  content: "";
+  position: absolute;
+  inset: -20%;
+  pointer-events: none;
+  opacity: 0.7;
+  background: radial-gradient(
+      720px 520px at 18% 22%,
+      rgba(18, 70, 52, 0.4),
+      transparent 72%
+    ),
+    radial-gradient(
+      780px 540px at 82% 70%,
+      rgba(12, 50, 38, 0.34),
+      transparent 74%
+    ),
+    radial-gradient(
+      520px 360px at 68% 35%,
+      rgba(16, 60, 44, 0.3),
+      transparent 72%
+    );
+  mix-blend-mode: normal;
+  filter: blur(10px);
+  transform: translate3d(0, 0, 0);
+  animation: landing-tint-drift 26s ease-in-out infinite;
+}
+
+.app::after {
+  opacity: 0.65;
+  background: radial-gradient(
+      700px 500px at 26% 18%,
+      rgba(50, 24, 90, 0.36),
+      transparent 74%
+    ),
+    radial-gradient(
+      640px 460px at 72% 82%,
+      rgba(36, 16, 70, 0.3),
+      transparent 74%
+    ),
+    radial-gradient(
+      520px 360px at 85% 35%,
+      rgba(30, 12, 60, 0.28),
+      transparent 72%
+    );
+  mix-blend-mode: normal;
+  filter: blur(12px);
+  animation: landing-tint-drift 34s ease-in-out infinite reverse;
+}
+
+@keyframes landing-tint-drift {
+  0% {
+    transform: translate3d(-2%, -1%, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(2%, 1.5%, 0) scale(1.03);
+  }
+  100% {
+    transform: translate3d(-2%, -1%, 0) scale(1);
   }
 }
 
@@ -70,6 +135,8 @@
   font-size: clamp(2.6rem, 5vw, 4.6rem);
   font-weight: 600;
   margin: 0;
+  text-transform: uppercase;
+  letter-spacing: 6px;
 }
 
 .lede {

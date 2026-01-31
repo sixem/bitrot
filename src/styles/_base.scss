@@ -79,27 +79,38 @@ option,
   user-select: text;
 }
 
-// Scrollbar styling is opt-in to avoid heavy global selector matching.
-.scrollable {
-  scrollbar-color: #1f1f1f #0b0b0b;
+// Lock background scroll when any modal is open.
+body[data-modal-open="true"] {
+  overflow: hidden;
+}
+
+// Global scrollbar styling keeps the UI consistent across all scrollable areas.
+:root {
+  --scrollbar-track: var(--range-track-color, #131313);
+  --scrollbar-thumb: var(--range-track-color, #131313);
+  --scrollbar-thumb-hover: var(--range-track-color, #131313);
+}
+
+:where(*) {
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
   scrollbar-width: thin;
 }
 
-.scrollable::-webkit-scrollbar {
+:where(*)::-webkit-scrollbar {
   width: 10px;
   height: 10px;
 }
 
-.scrollable::-webkit-scrollbar-track {
-  background: #0b0b0b;
+:where(*)::-webkit-scrollbar-track {
+  background: var(--scrollbar-track);
 }
 
-.scrollable::-webkit-scrollbar-thumb {
-  background: #1f1f1f;
+:where(*)::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
   border-radius: 999px;
-  border: 2px solid #0b0b0b;
+  border: 2px solid var(--scrollbar-track);
 }
 
-.scrollable::-webkit-scrollbar-thumb:hover {
-  background: #2b2b2b;
+:where(*)::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
 }

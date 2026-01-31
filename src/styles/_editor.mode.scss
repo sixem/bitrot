@@ -1,0 +1,319 @@
+@use "./surfaces" as surfaces;
+
+// Mode browser modal + mode-specific controls.
+
+.mode-modal {
+  width: min(1100px, 92vw);
+  max-height: 90vh;
+}
+
+.mode-modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.mode-modal-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.mode-modal-subtitle {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.mode-modal-search {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: min(280px, 100%);
+}
+
+.mode-modal-search-input {
+  width: min(320px, 100%);
+}
+
+.mode-modal-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+  gap: 14px;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+@media (max-width: 900px) {
+  .mode-modal-body {
+    grid-template-columns: 1fr;
+  }
+}
+
+.mode-modal-list,
+.mode-modal-details {
+  --surface-bg: rgba(0, 0, 0, 0.35);
+  --surface-border: 1px solid var(--border);
+  --surface-radius: var(--radius-lg);
+
+  @include surfaces.surface;
+  min-height: 0;
+  padding: 12px;
+}
+
+.mode-modal-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow: auto;
+}
+
+.mode-modal-details {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow: auto;
+}
+
+.mode-modal-empty {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--muted-strong);
+}
+
+.mode-option {
+  border: 1px solid transparent;
+  background: rgba(0, 0, 0, 0.4);
+  color: var(--fg);
+  text-align: left;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  cursor: pointer;
+  transition: border-color 140ms ease, background 140ms ease, transform 140ms ease;
+}
+
+.mode-option:hover {
+  border-color: var(--border-strong);
+  background: rgba(255, 255, 255, 0.04);
+  transform: translateY(-1px);
+}
+
+.mode-option[data-selected="true"] {
+  border-color: var(--accent);
+  background: rgba(123, 255, 168, 0.08);
+  box-shadow: 0 0 0 1px rgba(123, 255, 168, 0.24);
+}
+
+.mode-option__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.mode-option__label {
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.mode-option__description {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.mode-option__tags {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.mode-option__tag {
+  font-size: 0.6rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border);
+  color: var(--muted-strong);
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.mode-option__tag[data-tone="accent"] {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(123, 255, 168, 0.12);
+}
+
+.mode-option__tag[data-tone="native"] {
+  color: var(--tone-warning-strong);
+  border-color: var(--tone-warning-border);
+  background: var(--tone-warning-bg);
+}
+
+.mode-option__tag[data-tone="ffmpeg"] {
+  color: var(--tone-info-strong);
+  border-color: var(--tone-info-border);
+  background: var(--tone-info-bg);
+}
+
+.mode-option__tag[data-tone="muted"] {
+  color: var(--muted);
+  border-color: var(--border);
+}
+
+.mode-option__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.mode-option__chip {
+  font-size: 0.6rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border-radius: var(--radius-pill);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: var(--muted-strong);
+  background: rgba(0, 0, 0, 0.4);
+}
+
+.mode-modal-details-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.mode-modal-details-tags {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.mode-modal-details-label {
+  margin: 0;
+  font-size: 0.6rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--muted-strong);
+}
+
+.mode-modal-details-title {
+  margin: 4px 0 0;
+  font-size: 1.1rem;
+}
+
+.mode-modal-details-description,
+.mode-modal-details-text {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.mode-modal-details-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.mode-modal-details-chiplist {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.mode-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+// Secondary mode browser trigger under the dropdown.
+.mode-select-button {
+  --button-padding: 8px 10px;
+  --button-font-size: 0.75rem;
+  --button-letter-spacing: 0.02em;
+  --button-text-transform: none;
+  --button-bg: rgba(0, 0, 0, 0.45);
+
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  white-space: nowrap;
+}
+
+.mode-select-button[aria-expanded="true"] {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px rgba(123, 255, 168, 0.28);
+}
+
+.mode-select-button__label {
+  font-size: 0.6rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--muted-strong);
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+
+.mode-select-button__hint {
+  margin-left: auto;
+  font-size: 0.65rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+// Mode controls inside the editor rail.
+.mode-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.mode-control {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.mode-control-label {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--muted-strong);
+}
+
+.mode-control-value {
+  font-size: 0.75rem;
+  color: var(--muted-strong);
+  font-variant-numeric: tabular-nums;
+}
+
+.mode-input {
+  --control-padding: 6px 8px;
+  --control-font-size: 0.8rem;
+  width: 100%;
+}
+
+.mode-input:disabled {
+  opacity: 0.5;
+}

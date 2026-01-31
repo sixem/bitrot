@@ -1,0 +1,298 @@
+@use "./surfaces" as surfaces;
+
+// Export modal content + layout.
+
+.export-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+@media (max-width: 900px) {
+  .export-form {
+    grid-template-columns: 1fr;
+  }
+}
+
+.export-section--wide {
+  grid-column: span 2;
+}
+
+@media (max-width: 900px) {
+  .export-section--wide {
+    grid-column: span 1;
+  }
+}
+
+.export-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.export-label {
+  font-size: 0.65rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--muted-strong);
+}
+
+.export-select--preset .ui-select-trigger {
+  justify-content: flex-start;
+}
+
+.export-select--preset .ui-select-value {
+  width: 100%;
+  display: flex;
+  align-items: center;
+}
+
+.export-select--preset .ui-select-value .export-preset-option {
+  width: 100%;
+}
+
+.export-preset-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  font-size: 0.8rem;
+}
+
+.export-preset-option__name {
+  flex: 1 1 auto;
+  min-width: 0;
+  // Let descenders render fully without forcing scrollbars.
+  overflow: visible;
+  white-space: nowrap;
+}
+
+.export-preset-option__codec {
+  margin-left: auto;
+  font-size: 0.65rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.export-preset-option__codec[data-codec="h264"] {
+  color: rgba(120, 200, 255, 0.95);
+}
+
+.export-preset-option__codec[data-codec="nvenc"] {
+  color: rgba(140, 235, 175, 0.95);
+}
+
+.export-preset-option__codec[data-codec="vp9"] {
+  color: rgba(195, 160, 255, 0.95);
+}
+
+.export-input:focus {
+  border-color: var(--border-strong);
+}
+
+.export-help {
+  margin: 2px 0 0;
+  font-size: 0.72rem;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.export-help--tight {
+  margin-top: 0;
+}
+
+.export-title {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.export-title-main {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.export-title-side {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-end;
+  min-width: 220px;
+  // Keep the preset selector width steady so labels don't resize the control.
+  width: min(340px, 100%);
+}
+
+.export-preset {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: stretch;
+}
+
+.export-tags {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.export-tag {
+  --pill-font-size: 0.6rem;
+  --pill-letter-spacing: 0.16em;
+}
+
+.export-tag[data-tone="ready"] {
+  color: var(--tone-success-strong);
+  border-color: var(--tone-success-border);
+}
+
+.export-tag[data-tone="muted"] {
+  color: var(--muted-strong);
+}
+
+.export-section {
+  --surface-bg: rgba(0, 0, 0, 0.3);
+  --surface-border: 1px solid var(--border);
+  --surface-radius: var(--radius-lg);
+
+  @include surfaces.surface;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.export-section-header {
+  font-size: 0.65rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--muted-strong);
+}
+
+.export-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 10px;
+}
+
+.export-grid--output {
+  grid-template-columns: minmax(220px, 2fr) minmax(160px, 1fr);
+}
+
+@media (max-width: 900px) {
+  .export-grid--output {
+    grid-template-columns: 1fr;
+  }
+}
+
+.export-toggle {
+  --button-padding: 6px 10px;
+  --button-font-size: 0.6rem;
+  --button-letter-spacing: 0.14em;
+  --button-bg: rgba(0, 0, 0, 0.55);
+  align-self: flex-start;
+}
+
+.export-toggle--input {
+  --button-padding: 8px 10px;
+  --button-radius: var(--radius-md);
+  --button-font-size: 0.85rem;
+  --button-letter-spacing: 0.01em;
+  --button-text-transform: none;
+  --button-bg: #050505;
+  width: 100%;
+  line-height: 1.2;
+  min-height: 34px;
+  text-align: left;
+}
+
+.export-field--toggle {
+  justify-content: flex-start;
+}
+
+.export-toggle[data-active="true"] {
+  border-color: var(--tone-success-border);
+  color: var(--tone-success);
+}
+
+.export-textarea {
+  min-height: 72px;
+  resize: vertical;
+}
+
+.export-args {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.7rem;
+  color: var(--muted-strong);
+}
+
+.export-args code {
+  --surface-bg: #080808;
+  --surface-border: 1px solid var(--border);
+  --surface-radius: var(--radius-md);
+
+  @include surfaces.surface;
+  display: block;
+  padding: 8px 10px;
+  color: var(--fg);
+  font-family: var(--body-font);
+  font-size: 0.75rem;
+  word-break: break-all;
+}
+
+.export-path {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--muted-strong);
+  word-break: break-all;
+}
+
+.export-warning {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--tone-warning);
+  grid-column: span 2;
+}
+
+@media (max-width: 900px) {
+  .export-warning {
+    grid-column: span 1;
+  }
+}
+
+.export-warning--error {
+  color: var(--tone-error);
+}
+
+.export-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.export-actions-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.export-actions-right {
+  display: flex;
+  gap: 10px;
+  margin-left: auto;
+}

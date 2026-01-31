@@ -1,0 +1,681 @@
+@use "./surfaces" as surfaces;
+
+// Editor layout, preview, and toast styling.
+
+.toast-stack {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  z-index: 40;
+  pointer-events: none;
+}
+
+.toast {
+  --surface-bg: rgba(10, 10, 10, 0.9);
+  --surface-border: 1px solid var(--border);
+  --surface-radius: var(--radius-md);
+
+  @include surfaces.surface;
+  min-width: 220px;
+  max-width: 320px;
+  padding: 10px 14px;
+  color: var(--fg);
+  font-size: 0.9rem;
+  pointer-events: none;
+}
+
+.toast--success {
+  border-color: var(--tone-success-border);
+}
+
+.toast--error {
+  border-color: var(--tone-error-border);
+}
+
+// Editor layout: preview first, details below for calmer scanning.
+.editor-shell {
+  position: relative;
+  width: min(1320px, 100%);
+  margin: 0 auto;
+  padding: 15px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+
+  &[data-dragging="true"] {
+    .editor-layout,
+    .editor-header,
+    .editor-info {
+      opacity: 0.45;
+      transform: scale(0.99);
+    }
+  }
+}
+
+.editor-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 24px;
+  transition: opacity 140ms ease, transform 140ms ease;
+}
+
+.editor-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.editor-heading .editor-eyebrow {
+  margin: 0;
+}
+
+.editor-back {
+  --button-padding: 0;
+  --button-border: 0;
+  --button-bg: transparent;
+  --button-font-size: 0.75rem;
+  --button-letter-spacing: 0.12em;
+  --button-text-transform: none;
+  --button-color: var(--muted-strong);
+
+  line-height: 1;
+  transition: color 0.12s ease;
+}
+
+.editor-back:hover {
+  color: var(--fg);
+}
+
+.editor-left {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+  grid-column: 1;
+}
+
+.editor-header > div {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.editor-eyebrow {
+  margin: 0 0 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.3em;
+  font-size: 0.7rem;
+  color: var(--muted-strong);
+}
+
+.editor-title {
+  margin: 0;
+  font-size: clamp(1.6rem, 2.6vw, 2.3rem);
+  font-family: var(--title-font);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.editor-actions {
+  display: flex;
+  gap: 12px;
+}
+
+.editor-button {
+  --button-padding: 7px 14px;
+  --button-disabled-opacity: 0.45;
+  width: 100%;
+}
+
+// Main editor split: preview + processing on top, info across full width.
+.editor-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 320px);
+  grid-template-rows: minmax(0, var(--editor-top-row-height, auto)) auto;
+  gap: 20px;
+  align-items: stretch;
+  align-content: start;
+  flex: 1 1 auto;
+  min-height: 0;
+  transition: opacity 140ms ease, transform 140ms ease;
+}
+
+.editor-left,
+.editor-rail {
+  grid-row: 1;
+}
+
+.editor-left .editor-preview-card {
+  flex: 1 1 auto;
+}
+
+.editor-layout > * {
+  min-height: 0;
+}
+
+.editor-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  align-self: start;
+}
+
+.editor-processing-card,
+.editor-mode-card {
+  min-height: 0;
+}
+
+.editor-info {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px;
+  grid-column: 1 / -1;
+  transition: opacity 140ms ease, transform 140ms ease;
+}
+
+.editor-card {
+  --surface-bg: #050505;
+  --surface-border: 1px solid var(--border);
+  --surface-radius: var(--radius-lg);
+  --surface-shadow: var(--shadow-card);
+
+  @include surfaces.surface;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.editor-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.editor-card-header--mode {
+  align-items: flex-start;
+}
+
+.editor-card-header-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.editor-card-header-right {
+  flex: 0 0 auto;
+  max-width: 55%;
+}
+
+.editor-card-mode-name {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--accent);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: right;
+}
+
+.editor-card-tags {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.editor-card-title {
+  margin: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  font-size: 0.65rem;
+  color: var(--muted-strong);
+}
+
+.editor-card-tag[data-tone="ffmpeg"] {
+  color: var(--tone-info-strong);
+  border-color: var(--tone-info-border);
+  background: var(--tone-info-bg);
+}
+
+.editor-card-tag[data-tone="native"] {
+  color: var(--tone-warning-strong);
+  border-color: var(--tone-warning-border);
+  background: var(--tone-warning-bg);
+}
+
+.editor-pill {
+  --pill-color: var(--muted-strong);
+  --pill-bg: rgba(0, 0, 0, 0.5);
+}
+
+.editor-pill[data-tone="ready"] {
+  color: var(--tone-success-strong);
+  border-color: var(--tone-success-border);
+}
+
+.editor-pill[data-tone="loading"],
+.editor-pill[data-tone="running"] {
+  color: var(--tone-info);
+  border-color: var(--tone-info-border);
+}
+
+.editor-pill[data-tone="success"] {
+  color: var(--tone-success-strong);
+  border-color: var(--tone-success-border);
+}
+
+.editor-pill[data-tone="canceled"] {
+  color: var(--tone-warning);
+  border-color: var(--tone-warning-border);
+}
+
+.editor-pill[data-tone="error"] {
+  color: var(--tone-error);
+  border-color: var(--tone-error-border);
+}
+
+.editor-kv {
+  display: grid;
+  gap: 10px;
+}
+
+.editor-kv--dense {
+  gap: 8px;
+}
+
+.editor-kv-row {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+}
+
+// Full-width row variant for single-control lines (no left label).
+.editor-kv-row--full {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.editor-kv-label {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--muted-strong);
+}
+
+.editor-kv-value {
+  font-size: 0.9rem;
+  color: var(--fg);
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.editor-kv-value--action {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  width: 100%;
+  cursor: pointer;
+  user-select: text;
+  transition: color 0.12s ease, text-shadow 0.12s ease;
+}
+
+.editor-kv-value--action:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+.editor-kv-value--action:disabled {
+  cursor: default;
+  opacity: 0.6;
+  text-decoration: none;
+}
+
+.editor-card-error {
+  margin: 0;
+  color: var(--tone-error);
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+
+.editor-select {
+  --control-padding: 6px 10px;
+  width: 100%;
+}
+
+.editor-select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.editor-help {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.4;
+}
+
+.processing-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.editor-button--primary {
+  border-color: var(--tone-success-border);
+  background: var(--tone-success-bg);
+}
+
+.job-progress {
+  width: 100%;
+  height: 6px;
+  border-radius: 999px;
+  background: #111;
+  overflow: hidden;
+}
+
+.job-progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg, var(--tone-success), var(--tone-success-soft));
+  transition: width 120ms linear;
+}
+
+// Keep the preview compact so it doesn't dominate the layout.
+.editor-preview-card {
+  padding: 12px;
+  min-height: 0;
+}
+
+.preview-player {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.preview-surface {
+  position: relative;
+  border-radius: calc(var(--radius-lg) - 4px);
+  border: 1px solid var(--border);
+  background: radial-gradient(circle at top, rgba(30, 30, 30, 0.25), transparent 60%),
+    #030303;
+  overflow: hidden;
+  min-height: 240px;
+  flex: 1 1 auto;
+}
+
+.preview-frame {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: center;
+  background: #000;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.preview-video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: center;
+  background: #000;
+  position: relative;
+  z-index: 0;
+}
+
+.preview-placeholder {
+  color: var(--muted-strong);
+  font-size: 0.95rem;
+}
+
+.preview-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+  text-align: center;
+  color: var(--muted);
+  background: rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+  z-index: 2;
+}
+
+.preview-overlay--error {
+  color: var(--tone-error-strong);
+}
+
+.preview-corner {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: flex;
+  gap: 8px;
+  z-index: 3;
+  pointer-events: auto;
+}
+
+.preview-toggle {
+  --button-padding: 6px 10px;
+  --button-font-size: 0.6rem;
+  --button-bg: rgba(0, 0, 0, 0.55);
+  --button-disabled-opacity: 0.9;
+  backdrop-filter: blur(2px);
+}
+
+.preview-toggle[data-active="true"] {
+  border-color: var(--tone-success-border);
+  color: var(--tone-success);
+}
+
+.preview-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.preview-toolbar-top {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 12px;
+  flex-wrap: nowrap;
+}
+
+.preview-controls {
+  display: flex;
+  gap: 8px;
+}
+
+.preview-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: nowrap;
+  min-width: 0;
+}
+
+.preview-button {
+  --button-padding: 6px 10px;
+  --button-font-size: 0.65rem;
+  --button-letter-spacing: 0.14em;
+  --button-bg: rgba(0, 0, 0, 0.35);
+  --button-disabled-opacity: 0.4;
+}
+
+.preview-button--toggle {
+  min-inline-size: 64px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.preview-button--icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.preview-button-icon {
+  width: 12px;
+  height: 12px;
+  flex: 0 0 auto;
+}
+
+.preview-button--ghost {
+  --button-bg: transparent;
+}
+
+.preview-button--ghost[data-active="true"] {
+  border-color: var(--tone-success-border);
+  color: var(--tone-success-strong);
+}
+
+.preview-range {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  justify-content: space-between;
+}
+
+.preview-range-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: nowrap;
+}
+
+.preview-range-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.6rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted-strong);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  justify-content: flex-end;
+}
+
+.preview-range-info span {
+  min-width: 0;
+}
+
+.preview-time {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  align-items: center;
+  font-size: 0.7rem;
+  color: var(--muted-strong);
+  font-variant-numeric: tabular-nums;
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+.preview-time-separator {
+  opacity: 0.5;
+}
+
+.preview-warning {
+  font-size: 0.7rem;
+  color: var(--tone-warning-strong);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.preview-warning-action {
+  --button-padding: 4px 8px;
+  --button-font-size: 0.6rem;
+  --button-letter-spacing: 0.14em;
+  --button-disabled-opacity: 0.6;
+}
+
+// Range sliders: shared base handles styling, this class just tunes sizing + track tint.
+.range-input {
+  --range-height: 16px;
+  --range-thumb-size: 14px;
+  --range-thumb-offset: -6px;
+  --scrub-track: #131313;
+  --range-track-color: var(--scrub-track, #131313);
+}
+
+.preview-audio {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.65rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--muted-strong);
+}
+
+.preview-audio-label {
+  white-space: nowrap;
+}
+
+.preview-audio-value {
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 960px) {
+  .editor-shell {
+    padding: 40px 20px 56px;
+  }
+
+  .editor-header {
+    flex-direction: row;
+    align-items: flex-end;
+    gap: 16px;
+  }
+
+  .editor-actions {
+    flex-wrap: nowrap;
+  }
+
+  .editor-title {
+    max-width: 100%;
+  }
+}
+
+// Respect reduced-motion by avoiding scale transitions during drag.
+@media (prefers-reduced-motion: reduce) {
+  .editor-header,
+  .editor-layout,
+  .editor-info {
+    transition: none;
+  }
+
+  .editor-shell[data-dragging="true"] {
+    .editor-layout,
+    .editor-header,
+    .editor-info {
+      transform: none;
+    }
+  }
+}

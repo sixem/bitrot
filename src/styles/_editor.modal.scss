@@ -1,0 +1,179 @@
+@use "./surfaces" as surfaces;
+
+// Editor modals + system gate overlay.
+
+.system-gate {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.86);
+  z-index: 60;
+}
+
+.system-gate-card {
+  --surface-bg: #080808;
+  --surface-border: 1px solid var(--border);
+  --surface-radius: var(--radius-lg);
+  --surface-shadow: var(--shadow-lift);
+
+  @include surfaces.surface;
+  width: min(520px, 92vw);
+  padding: 26px;
+  text-align: left;
+  max-height: min(75vh, 520px);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.system-gate-title {
+  margin: 0 0 10px;
+  font-size: 1.3rem;
+}
+
+.system-gate-body {
+  margin: 0;
+  color: var(--muted);
+}
+
+.system-gate-details {
+  margin: 0;
+  color: var(--muted-strong);
+  font-size: 0.9rem;
+  word-break: break-word;
+  white-space: pre-wrap;
+  overflow: auto;
+  max-height: min(40vh, 300px);
+}
+
+.system-gate-actions {
+  margin-top: auto;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.system-gate-button {
+  --button-padding: 8px 16px;
+}
+
+// Modal primitives shared by export + receipt flows.
+// Large overlays opt into blur only when the browser can handle it.
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.78);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 30;
+}
+
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .system-gate {
+    background: rgba(0, 0, 0, 0.8);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+  }
+
+  .modal-backdrop {
+    background: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+  }
+
+  .preview-overlay {
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+  }
+}
+
+.modal {
+  --surface-bg: #0a0a0a;
+  --surface-border: 1px solid var(--border);
+  --surface-radius: var(--radius-lg);
+  --surface-shadow: var(--shadow-modal);
+
+  @include surfaces.surface;
+  width: min(520px, 92vw);
+  max-height: min(70vh, 560px);
+  padding: 24px;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow: hidden;
+}
+
+.modal-title {
+  margin: 0 0 10px;
+  font-size: 1.2rem;
+}
+
+.modal-body {
+  margin: 0;
+  color: var(--muted);
+  white-space: pre-wrap;
+  overflow: auto;
+  max-height: min(50vh, 360px);
+}
+
+.modal-actions {
+  margin-top: 6px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.modal-button {
+  --button-padding: 8px 16px;
+  --button-font-size: 0.9rem;
+  --button-letter-spacing: 0.08em;
+}
+
+.modal-button--primary {
+  border-color: var(--tone-success-border);
+  background: var(--tone-success-bg);
+}
+
+.receipt-modal {
+  width: min(560px, 92vw);
+}
+
+.export-modal {
+  width: min(1100px, 92vw);
+  max-height: 90vh;
+}
+
+.receipt-kv {
+  margin: 4px 0 0;
+}
+
+.receipt-status {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--muted-strong);
+}
+
+.receipt-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.receipt-actions-row {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.receipt-actions-row .modal-button {
+  flex: 1 1 140px;
+}
+
+.receipt-close-button {
+  width: 100%;
+}
