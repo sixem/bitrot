@@ -10,11 +10,12 @@
 @forward "./styles/editor.mode";
 @forward "./styles/editor.layout";
 
+// Use explicit namespaces to avoid collisions between editor.* modules.
 @use "./styles/base";
 @use "./styles/controls";
 @use "./styles/surfaces";
 @use "./styles/landing";
-@use "./styles/editor.modal";
-@use "./styles/editor.export";
-@use "./styles/editor.mode";
-@use "./styles/editor.layout";
+@use "./styles/editor.modal" as editorModal;
+@use "./styles/editor.export" as editorExport;
+@use "./styles/editor.mode" as editorMode;
+@use "./styles/editor.layout" as editorLayout;
