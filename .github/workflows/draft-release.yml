@@ -17,22 +17,19 @@ jobs:
         os: [windows-latest, ubuntu-latest, macos-latest]
         include:
           - os: windows-latest
-            artifact-name: windows-binary
+            artifact-name: windows-bundles
             upload-path: |
-              src-tauri/target/release/bitrot.exe
               src-tauri/target/release/bundle/msi/*.msi
               src-tauri/target/release/bundle/nsis/*.exe
           - os: ubuntu-latest
-            artifact-name: linux-binary
+            artifact-name: linux-bundles
             upload-path: |
-              src-tauri/target/release/bitrot
               src-tauri/target/release/bundle/deb/*.deb
               src-tauri/target/release/bundle/rpm/*.rpm
               src-tauri/target/release/bundle/appimage/*.AppImage
           - os: macos-latest
-            artifact-name: macos-binary
+            artifact-name: macos-bundles
             upload-path: |
-              src-tauri/target/release/bitrot
               src-tauri/target/release/bundle/dmg/*.dmg
     steps:
       - uses: actions/checkout@v4
@@ -65,17 +62,76 @@ jobs:
       - name: Install FFmpeg (macOS)
         if: matrix.os == 'macos-latest'
         run: brew install ffmpeg
+      - name: Setup ffmpeg sidecars (Windows)
+        if: matrix.os == 'windows-latest'
+        run: pnpm run setup:ffmpeg
+        env:
+          FFMPEG_BIN: C:\ProgramData\chocolatey\lib\ffmpeg\tools\ffmpeg.exe
+          FFPROBE_BIN: C:\ProgramData\chocolatey\lib\ffmpeg\tools\ffprobe.exe
       - name: Setup ffmpeg sidecars
+        if: matrix.os != 'windows-latest'
         run: pnpm run setup:ffmpeg
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
-      - name: Build Tauri app
-        run: pnpm tauri build
+      - name: Build Windows app (no bundle)
+        if: matrix.os == 'windows-latest'
+        run: pnpm tauri build --bundles none
+      - name: Package Windows unbundled binary
+        if: matrix.os == 'windows-latest'
+        run: |
+          New-Item -ItemType Directory -Force -Path src-tauri/target/release/unbundled | Out-Null
+          Copy-Item -Force src-tauri/target/release/bitrot.exe src-tauri/target/release/unbundled/bitrot.exe
+          Compress-Archive -Path src-tauri/target/release/unbundled/* -DestinationPath src-tauri/target/release/bitrot-windows-unbundled.zip -Force
+      - name: Build Windows bundles
+        if: matrix.os == 'windows-latest'
+        run: pnpm tauri build --bundles msi,nsis
+      - name: Build macOS app (no bundle)
+        if: matrix.os == 'macos-latest'
+        run: pnpm tauri build --bundles none
+      - name: Package macOS unbundled binary
+        if: matrix.os == 'macos-latest'
+        run: |
+          mkdir -p src-tauri/target/release/unbundled
+          cp src-tauri/target/release/bitrot src-tauri/target/release/unbundled/bitrot
+          tar -czf src-tauri/target/release/bitrot-macos-unbundled.tar.gz -C src-tauri/target/release/unbundled bitrot
+      - name: Build macOS bundle
+        if: matrix.os == 'macos-latest'
+        run: pnpm tauri build --bundles dmg
+      - name: Build Linux app (no bundle)
+        if: matrix.os == 'ubuntu-latest'
+        run: pnpm tauri build --bundles none
+      - name: Package Linux unbundled binary
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          mkdir -p src-tauri/target/release/unbundled
+          cp src-tauri/target/release/bitrot src-tauri/target/release/unbundled/bitrot
+          tar -czf src-tauri/target/release/bitrot-linux-unbundled.tar.gz -C src-tauri/target/release/unbundled bitrot
+      - name: Build Linux bundles
+        if: matrix.os == 'ubuntu-latest'
+        run: pnpm tauri build --bundles appimage,deb,rpm
       - name: Upload ${{ matrix.os }} artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact-name }}
           path: ${{ matrix.upload-path }}
+      - name: Upload Windows unbundled artifact
+        if: matrix.os == 'windows-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-unbundled
+          path: src-tauri/target/release/bitrot-windows-unbundled.zip
+      - name: Upload Linux unbundled artifact
+        if: matrix.os == 'ubuntu-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-unbundled
+          path: src-tauri/target/release/bitrot-linux-unbundled.tar.gz
+      - name: Upload macOS unbundled artifact
+        if: matrix.os == 'macos-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-unbundled
+          path: src-tauri/target/release/bitrot-macos-unbundled.tar.gz
 
   create-draft-release:
     name: Create Draft Release
@@ -102,19 +158,35 @@ jobs:
             exit 1
           fi
           echo "tag=$VERSION" >> "$GITHUB_OUTPUT"
+      - name: Write draft release notes
+        run: |
+          cat <<'EOF' > release-notes.txt
+          ## Bundles
+
+          - Windows: MSI + NSIS installers (includes ffmpeg/ffprobe sidecars).
+          - Windows (unbundled): `bitrot.exe` zip. Requires ffmpeg/ffprobe on PATH or placed next to the binary.
+          - macOS: DMG (includes ffmpeg/ffprobe sidecars).
+          - macOS (unbundled): `bitrot` binary tarball. Requires ffmpeg/ffprobe on PATH or placed next to the binary.
+          - Linux: AppImage/DEB/RPM bundles (includes ffmpeg/ffprobe sidecars; ensure GTK/WebKit runtime deps are present).
+          - Linux (unbundled): `bitrot` binary tarball. Requires ffmpeg/ffprobe on PATH or placed next to the binary, plus system GTK/WebKit deps.
+
+          ## Runtime notes
+
+          BitRot resolves FFmpeg in this order: local binary next to the app, bundled sidecars, then system PATH.
+          EOF
       - name: Create/Update draft release and upload assets
         run: |
           set -euo pipefail
           TAG="${{ steps.tag.outputs.tag }}"
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release edit "$TAG" --draft --title "Bitrot build $TAG"
+            gh release edit "$TAG" --draft --title "Bitrot build $TAG" --notes-file release-notes.txt
           else
-            gh release create "$TAG" --draft --title "Bitrot build $TAG" --target "${GITHUB_SHA}"
+            gh release create "$TAG" --draft --title "Bitrot build $TAG" --notes-file release-notes.txt --target "${GITHUB_SHA}"
           fi
           mapfile -d '' FILES < <(
             find artifacts -type f \
               \( -iname '*.msi' -o -iname '*.exe' -o -iname '*.dmg' \
-                 -o -iname '*.zip' -o -iname '*.deb' -o -iname '*.rpm' -o -iname '*.AppImage' \) \
+                 -o -iname '*.zip' -o -iname '*.tar.gz' -o -iname '*.deb' -o -iname '*.rpm' -o -iname '*.AppImage' \) \
               -print0
           )
           if [ ${#FILES[@]} -eq 0 ]; then
