@@ -1,22 +1,17 @@
+// Top-level editor layout + workflow coordinator.
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { VideoAsset } from "@/domain/video";
 import useGlobalVideoDrop from "@/hooks/useGlobalVideoDrop";
-import formatBytes from "@/utils/formatBytes";
-import formatDuration from "@/utils/formatDuration";
 import useVideoMetadata from "@/editor/useVideoMetadata";
 import useFramePreview from "@/editor/useFramePreview";
 import useFrameMap from "@/editor/useFrameMap";
 import VideoPreview from "@/editor/VideoPreview";
 import ModeCard from "@/editor/ModeCard";
+import EditorProcessingCard from "@/editor/EditorProcessingCard";
+import EditorInfoSection from "@/editor/EditorInfoSection";
 import useFfmpegJob from "@/jobs/useFfmpegJob";
-import {
-  buildDefaultOutputPath,
-  joinOutputPath,
-  resolveExtensionForFormat,
-  splitOutputPath
-} from "@/jobs/output";
 import { revealInFolder } from "@/system/reveal";
-import ExportModal, { type ExportSettings } from "@/editor/ExportModal";
+import ExportModal from "@/editor/ExportModal";
 import ReceiptModal from "@/editor/ReceiptModal";
 import useEditorTopRowHeight from "@/editor/useEditorTopRowHeight";
 import useTrimSelection from "@/editor/useTrimSelection";
@@ -26,11 +21,10 @@ import {
   type ModeConfigMap,
   type ModeId
 } from "@/modes/definitions";
-import {
-  DEFAULT_EXPORT_PROFILE,
-  type ExportProfile
-} from "@/jobs/exportProfile";
-import { DEFAULT_EXPORT_PRESET_ID } from "@/jobs/exportPresets";
+import { type ExportProfile } from "@/jobs/exportProfile";
+import useMetadataSummary from "@/editor/useMetadataSummary";
+import useExportSettingsState from "@/editor/useExportSettingsState";
+import useJobStatus from "@/editor/useJobStatus";
 
 type EditorProps = {
   asset: VideoAsset;
@@ -41,6 +35,15 @@ type EditorProps = {
 // Editor shell that hosts the upcoming processing workflow.
 const Editor = ({ asset, onReplace, onBack }: EditorProps) => {
   const metadataState = useVideoMetadata(asset);
+  const {
+    statusLabel,
+    metadataDurationSeconds,
+    metadataSizeBytes,
+    metadataFps,
+    metadataIsVfr,
+    fileType,
+    folderPath
+  } = useMetadataSummary(asset, metadataState);
   const { job, run, cancel } = useFfmpegJob();
   const { isDragging } = useGlobalVideoDrop({
     isEnabled: true,
@@ -56,11 +59,6 @@ const Editor = ({ asset, onReplace, onBack }: EditorProps) => {
   const activeMode = getModeDefinition(modeId);
   const [frameMapRequestId, setFrameMapRequestId] = useState(0);
   const lastAssetPathRef = useRef(asset.path);
-  const metadataDurationSeconds =
-    typeof metadataState.metadata?.durationSeconds === "number" &&
-    Number.isFinite(metadataState.metadata.durationSeconds)
-      ? metadataState.metadata.durationSeconds
-      : undefined;
   const trimSelection = useTrimSelection({
     durationSeconds: metadataDurationSeconds,
     resetKey: asset.path
@@ -68,7 +66,6 @@ const Editor = ({ asset, onReplace, onBack }: EditorProps) => {
   const [modeConfigs, setModeConfigs] = useState<ModeConfigMap>(() =>
     createModeConfigs()
   );
-  const metadataIsVfr = metadataState.metadata?.isVfr ?? false;
   const frameMapState = useFrameMap(asset, metadataIsVfr, frameMapRequestId);
   const previewControl = useFramePreview({
     asset,
@@ -78,28 +75,6 @@ const Editor = ({ asset, onReplace, onBack }: EditorProps) => {
     jobId: job.jobId,
     isProcessing: job.status === "running"
   });
-  const statusLabel =
-    metadataState.status === "loading"
-      ? "Analyzing"
-      : metadataState.status === "ready"
-        ? "Ready"
-        : metadataState.status === "error"
-          ? "Metadata error"
-          : "Awaiting analysis";
-  const fileType = asset.name.split(".").pop()?.toUpperCase() ?? "--";
-  const folderPath = asset.path
-    ? asset.path.replace(/[/\\\\][^/\\\\]+$/, "")
-    : "--";
-  const metadataSizeBytes =
-    typeof metadataState.metadata?.sizeBytes === "number" &&
-    Number.isFinite(metadataState.metadata.sizeBytes)
-      ? metadataState.metadata.sizeBytes
-      : undefined;
-  const metadataFps =
-    typeof metadataState.metadata?.fps === "number" &&
-    Number.isFinite(metadataState.metadata.fps)
-      ? metadataState.metadata.fps
-      : undefined;
   const trimEnabled = trimSelection.selection.enabled && trimSelection.selection.isValid;
   const trimStartSeconds =
     trimEnabled && typeof trimSelection.selection.start === "number"
@@ -113,69 +88,22 @@ const Editor = ({ asset, onReplace, onBack }: EditorProps) => {
     trimStartSeconds !== undefined && trimEndSeconds !== undefined
       ? Math.max(0, trimEndSeconds - trimStartSeconds)
       : metadataDurationSeconds;
-  const defaultProfile: ExportProfile =
-    modeId === "copy"
-      ? { ...DEFAULT_EXPORT_PROFILE, videoMode: "copy" }
-      : DEFAULT_EXPORT_PROFILE;
-  const defaultOutputPath = buildDefaultOutputPath(
-    asset.path,
-    resolveExtensionForFormat(defaultProfile.format)
-  );
-  const [exportSettings, setExportSettings] = useState<ExportSettings>(() => ({
-    ...splitOutputPath(defaultOutputPath),
-    profile: defaultProfile,
-    presetId: DEFAULT_EXPORT_PRESET_ID
-  }));
-  const outputPath =
-    job.outputPath ??
-    joinOutputPath(
-      exportSettings.folder,
-      exportSettings.fileName,
-      exportSettings.separator
-    );
-  const canRevealOutput = job.status === "success" && outputPath.trim().length > 0;
-  const jobStatusLabel =
-    job.status === "running"
-      ? "Running"
-      : job.status === "success"
-        ? "Complete"
-        : job.status === "error"
-          ? "Failed"
-          : job.status === "canceled"
-            ? "Canceled"
-            : "Idle";
-  const progressPercent = Number.isFinite(job.progress.percent)
-    ? job.progress.percent
-    : 0;
-  const outTimeSeconds =
-    typeof job.progress.outTimeSeconds === "number" &&
-    Number.isFinite(job.progress.outTimeSeconds)
-      ? job.progress.outTimeSeconds
-      : undefined;
-  const totalSizeBytes =
-    typeof job.progress.totalSizeBytes === "number" &&
-    Number.isFinite(job.progress.totalSizeBytes)
-      ? job.progress.totalSizeBytes
-      : undefined;
-  const elapsedSeconds =
-    typeof job.progress.elapsedSeconds === "number" &&
-    Number.isFinite(job.progress.elapsedSeconds)
-      ? job.progress.elapsedSeconds
-      : undefined;
-  const etaSeconds =
-    typeof job.progress.etaSeconds === "number" &&
-    Number.isFinite(job.progress.etaSeconds)
-      ? job.progress.etaSeconds
-      : undefined;
-  const renderTimeSeconds =
-    job.status === "running" &&
-    typeof job.progress.outTimeSeconds === "number" &&
-    Number.isFinite(job.progress.outTimeSeconds)
-      ? trimStartSeconds !== undefined
-        ? trimStartSeconds + job.progress.outTimeSeconds
-        : job.progress.outTimeSeconds
-      : undefined;
-  const isExportDisabled = job.status === "running";
+  const { exportSettings, setExportSettings, outputPath } = useExportSettingsState({
+    assetPath: asset.path,
+    modeId,
+    jobOutputPath: job.outputPath
+  });
+  const {
+    jobStatusLabel,
+    progressPercent,
+    outTimeSeconds,
+    totalSizeBytes,
+    elapsedSeconds,
+    etaSeconds,
+    renderTimeSeconds,
+    canRevealOutput,
+    isExportDisabled
+  } = useJobStatus({ job, outputPath, trimStartSeconds });
   const lastRunRef = useRef<{
     outputPath: string;
     modeId: ModeId;
@@ -209,35 +137,6 @@ const Editor = ({ asset, onReplace, onBack }: EditorProps) => {
   const handleFrameMapRequest = useCallback(() => {
     setFrameMapRequestId((prev) => prev + 1);
   }, []);
-
-  useEffect(() => {
-    setExportSettings((prev) => ({
-      ...splitOutputPath(
-        buildDefaultOutputPath(
-          asset.path,
-          resolveExtensionForFormat(prev.profile.format)
-        )
-      ),
-      profile: prev.profile,
-      presetId: prev.presetId
-    }));
-  }, [asset.path]);
-
-  useEffect(() => {
-    if (modeId === "copy") {
-      return;
-    }
-    if (exportSettings.profile.videoMode !== "copy") {
-      return;
-    }
-    setExportSettings((prev) => ({
-      ...prev,
-      profile: {
-        ...prev.profile,
-        videoMode: "encode"
-      }
-    }));
-  }, [modeId, exportSettings.profile.videoMode]);
 
   useEffect(() => {
     if (job.status === "running") {
@@ -339,7 +238,7 @@ const Editor = ({ asset, onReplace, onBack }: EditorProps) => {
                   title="Back to landing"
                   aria-label="Back to landing"
                 >
-                  ←
+                  &larr;
                 </button>
                 <p className="editor-eyebrow">BitRot Editor</p>
               </div>
@@ -372,197 +271,36 @@ const Editor = ({ asset, onReplace, onBack }: EditorProps) => {
             onConfigChange={handleModeConfigChange}
             disabled={job.status === "running"}
           />
-
-          <article className="editor-card editor-processing-card">
-            <div className="editor-card-header">
-              <h2 className="editor-card-title">Processing</h2>
-              <span className="editor-pill" data-tone={job.status}>
-                {jobStatusLabel}
-              </span>
-            </div>
-            <div className="editor-kv">
-              <div className="editor-kv-row">
-                <span className="editor-kv-label">Output</span>
-                <button
-                  className="editor-kv-value editor-kv-value--action"
-                  type="button"
-                  onClick={handleRevealOutput}
-                  title={outputPath}
-                  disabled={!canRevealOutput}
-                >
-                  {outputPath}
-                </button>
-              </div>
-              <div className="editor-kv-row">
-                <span className="editor-kv-label">Progress</span>
-                <span className="editor-kv-value">
-                  {progressPercent.toFixed(1)}%
-                </span>
-              </div>
-            </div>
-
-            <div className="job-progress">
-              <div
-                className="job-progress-bar"
-                style={{ width: `${progressPercent}%` }}
-              />
-            </div>
-
-            <div className="editor-kv editor-kv--dense">
-              <div className="editor-kv-row">
-                <span className="editor-kv-label">Time</span>
-                <span className="editor-kv-value">
-                  {outTimeSeconds !== undefined ? formatDuration(outTimeSeconds) : "--"}
-                </span>
-              </div>
-              <div className="editor-kv-row">
-                <span className="editor-kv-label">Frames</span>
-                <span className="editor-kv-value">
-                  {typeof job.progress.frame === "number" &&
-                  Number.isFinite(job.progress.frame)
-                    ? job.progress.frame
-                    : "--"}
-                </span>
-              </div>
-              <div className="editor-kv-row">
-                <span className="editor-kv-label">FPS</span>
-                <span className="editor-kv-value">
-                  {typeof job.progress.fps === "number" &&
-                  Number.isFinite(job.progress.fps)
-                    ? job.progress.fps.toFixed(2)
-                    : "--"}
-                </span>
-              </div>
-              <div className="editor-kv-row">
-                <span className="editor-kv-label">Speed</span>
-                <span className="editor-kv-value">
-                  {typeof job.progress.speed === "number" &&
-                  Number.isFinite(job.progress.speed)
-                    ? `${job.progress.speed.toFixed(2)}x`
-                    : "--"}
-                </span>
-              </div>
-              <div className="editor-kv-row">
-                <span className="editor-kv-label">Elapsed</span>
-                <span className="editor-kv-value">
-                  {elapsedSeconds !== undefined ? formatDuration(elapsedSeconds) : "--"}
-                </span>
-              </div>
-              <div className="editor-kv-row">
-                <span className="editor-kv-label">ETA</span>
-                <span className="editor-kv-value">
-                  {etaSeconds !== undefined ? formatDuration(etaSeconds) : "--"}
-                </span>
-              </div>
-              <div className="editor-kv-row">
-                <span className="editor-kv-label">Bitrate</span>
-                <span className="editor-kv-value">
-                  {job.progress.bitrate ?? "--"}
-                </span>
-              </div>
-              <div className="editor-kv-row">
-                <span className="editor-kv-label">Size</span>
-                <span className="editor-kv-value">
-                  {totalSizeBytes !== undefined ? formatBytes(totalSizeBytes) : "--"}
-                </span>
-              </div>
-            </div>
-
-            <div className="processing-actions">
-              <button
-                className="editor-button editor-button--primary"
-                type="button"
-                onClick={handleExportOpen}
-                disabled={isExportDisabled}
-              >
-                {job.status === "running" ? "Running..." : "Export"}
-              </button>
-              {job.status === "running" && (
-                <button className="editor-button" type="button" onClick={handleCancel}>
-                  Cancel
-                </button>
-              )}
-            </div>
-
-            {job.status === "error" && job.error && (
-              <p className="editor-card-error">{job.error}</p>
-            )}
-          </article>
+          <EditorProcessingCard
+            status={job.status}
+            error={job.error}
+            progress={job.progress}
+            outputPath={outputPath}
+            canRevealOutput={canRevealOutput}
+            jobStatusLabel={jobStatusLabel}
+            progressPercent={progressPercent}
+            outTimeSeconds={outTimeSeconds}
+            totalSizeBytes={totalSizeBytes}
+            elapsedSeconds={elapsedSeconds}
+            etaSeconds={etaSeconds}
+            isExportDisabled={isExportDisabled}
+            onRevealOutput={handleRevealOutput}
+            onExport={handleExportOpen}
+            onCancel={handleCancel}
+          />
         </aside>
 
         <section className="editor-info" ref={infoRef}>
-          <article className="editor-card">
-            <div className="editor-card-header">
-              <h2 className="editor-card-title">Source</h2>
-              <span className="editor-pill" data-tone={metadataState.status}>
-                {statusLabel}
-              </span>
-            </div>
-            <div className="editor-kv">
-              <div className="editor-kv-row">
-                <span className="editor-kv-label">Name</span>
-                <span className="editor-kv-value" title={asset.name}>
-                  {asset.name}
-                </span>
-              </div>
-              <div className="editor-kv-row">
-                <span className="editor-kv-label">Folder</span>
-                <span className="editor-kv-value" title={folderPath}>
-                  {folderPath}
-                </span>
-              </div>
-              <div className="editor-kv-row">
-                <span className="editor-kv-label">Size</span>
-                <span className="editor-kv-value">
-                  {metadataSizeBytes !== undefined ? formatBytes(metadataSizeBytes) : "--"}
-                </span>
-              </div>
-              <div className="editor-kv-row">
-                <span className="editor-kv-label">Type</span>
-                <span className="editor-kv-value">{fileType}</span>
-              </div>
-            </div>
-          </article>
-
-          <article className="editor-card">
-            <div className="editor-card-header">
-              <h2 className="editor-card-title">Metadata</h2>
-              <span className="editor-card-tag">ffprobe</span>
-            </div>
-            <div className="editor-kv">
-              <div className="editor-kv-row">
-                <span className="editor-kv-label">Duration</span>
-                <span className="editor-kv-value">
-                  {metadataDurationSeconds !== undefined
-                    ? formatDuration(metadataDurationSeconds)
-                    : "--"}
-                </span>
-              </div>
-              <div className="editor-kv-row">
-                <span className="editor-kv-label">Resolution</span>
-                <span className="editor-kv-value">
-                  {metadataState.metadata?.width && metadataState.metadata?.height
-                    ? `${metadataState.metadata.width}x${metadataState.metadata.height}`
-                    : "--"}
-                </span>
-              </div>
-              <div className="editor-kv-row">
-                <span className="editor-kv-label">FPS</span>
-                <span className="editor-kv-value">
-                  {metadataFps !== undefined ? metadataFps.toFixed(2) : "--"}
-                </span>
-              </div>
-              <div className="editor-kv-row">
-                <span className="editor-kv-label">Codec</span>
-                <span className="editor-kv-value">
-                  {metadataState.metadata?.codec ?? "--"}
-                </span>
-              </div>
-            </div>
-            {metadataState.status === "error" && metadataState.error && (
-              <p className="editor-card-error">{metadataState.error}</p>
-            )}
-          </article>
+          <EditorInfoSection
+            assetName={asset.name}
+            folderPath={folderPath}
+            fileType={fileType}
+            metadataDurationSeconds={metadataDurationSeconds}
+            metadataSizeBytes={metadataSizeBytes}
+            metadataFps={metadataFps}
+            metadataState={metadataState}
+            statusLabel={statusLabel}
+          />
         </section>
       </section>
 

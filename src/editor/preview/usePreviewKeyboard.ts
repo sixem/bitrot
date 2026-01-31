@@ -1,0 +1,144 @@
+// Handles preview keyboard shortcuts for trim and frame stepping.
+import { useEffect, type MutableRefObject } from "react";
+import type { TrimControl } from "@/editor/preview/types";
+import { isEditableTarget } from "@/editor/preview/utils";
+
+type UsePreviewKeyboardArgs = {
+  controlsDisabled: boolean;
+  sourceUrl: string;
+  hasFrameMap: boolean;
+  frameDurationSeconds?: number;
+  canRequestFrameMap: boolean;
+  trim?: TrimControl;
+  nudgeTrimBoundary: (boundary: "start" | "end", deltaFrames: number) => void;
+  seekByFrames: (deltaFrames: number) => void;
+  startHoldPlayback: (direction: "forward" | "reverse") => void;
+  stopHoldPlayback: () => void;
+  holdActiveRef: MutableRefObject<boolean>;
+  holdKeyRef: MutableRefObject<"ArrowLeft" | "ArrowRight" | null>;
+  onRequestFrameMap: () => void;
+};
+
+// Keyboard shortcuts for frame-by-frame nudging and trim adjustments.
+const usePreviewKeyboard = ({
+  controlsDisabled,
+  sourceUrl,
+  hasFrameMap,
+  frameDurationSeconds,
+  canRequestFrameMap,
+  trim,
+  nudgeTrimBoundary,
+  seekByFrames,
+  startHoldPlayback,
+  stopHoldPlayback,
+  holdActiveRef,
+  holdKeyRef,
+  onRequestFrameMap
+}: UsePreviewKeyboardArgs) => {
+  useEffect(() => {
+    const canNudgeFrames = hasFrameMap || !!frameDurationSeconds;
+    const canPromptFrameMap = canRequestFrameMap;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || controlsDisabled || !sourceUrl) {
+        return;
+      }
+      if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") {
+        return;
+      }
+      if (event.metaKey || event.ctrlKey) {
+        return;
+      }
+      if (isEditableTarget(event.target)) {
+        return;
+      }
+
+      const delta = event.key === "ArrowRight" ? 1 : -1;
+      if (event.shiftKey && trim) {
+        event.preventDefault();
+        if (!canNudgeFrames && canPromptFrameMap) {
+          onRequestFrameMap();
+          return;
+        }
+        nudgeTrimBoundary("start", delta);
+        return;
+      }
+      if (event.altKey && trim) {
+        event.preventDefault();
+        if (!canNudgeFrames && canPromptFrameMap) {
+          onRequestFrameMap();
+          return;
+        }
+        nudgeTrimBoundary("end", delta);
+        return;
+      }
+
+      event.preventDefault();
+      if (event.repeat) {
+        // Use OS repeat delay as the "hold" threshold for continuous playback.
+        if (!holdActiveRef.current) {
+          if (delta > 0 || canNudgeFrames) {
+            startHoldPlayback(delta > 0 ? "forward" : "reverse");
+          } else if (canPromptFrameMap) {
+            onRequestFrameMap();
+          }
+        }
+        return;
+      }
+      if (!canNudgeFrames) {
+        if (canPromptFrameMap) {
+          onRequestFrameMap();
+        }
+        return;
+      }
+      if (!holdKeyRef.current) {
+        holdKeyRef.current = event.key;
+      }
+      seekByFrames(delta);
+    };
+
+    const handleKeyUp = (event: KeyboardEvent) => {
+      if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") {
+        return;
+      }
+      if (event.metaKey || event.ctrlKey) {
+        return;
+      }
+      if (isEditableTarget(event.target)) {
+        return;
+      }
+      if (holdKeyRef.current && holdKeyRef.current !== event.key) {
+        return;
+      }
+      event.preventDefault();
+
+      holdKeyRef.current = null;
+      if (holdActiveRef.current) {
+        stopHoldPlayback();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keyup", handleKeyUp);
+    };
+  }, [
+    canRequestFrameMap,
+    controlsDisabled,
+    frameDurationSeconds,
+    hasFrameMap,
+    holdActiveRef,
+    holdKeyRef,
+    nudgeTrimBoundary,
+    onRequestFrameMap,
+    seekByFrames,
+    sourceUrl,
+    startHoldPlayback,
+    stopHoldPlayback,
+    trim
+  ]);
+};
+
+export default usePreviewKeyboard;

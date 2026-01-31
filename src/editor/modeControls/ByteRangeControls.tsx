@@ -28,7 +28,7 @@ const ModuloMappingControls = ({
       <span className="mode-control-value">{config.intensity}%</span>
     </label>
     <label className="mode-control">
-      <span className="mode-control-label">Modulus</span>
+      <span className="mode-control-label">Block size</span>
       <input
         className="mode-slider"
         type="range"
@@ -42,7 +42,7 @@ const ModuloMappingControls = ({
       <span className="mode-control-value">{config.modulus}</span>
     </label>
     <label className="mode-control">
-      <span className="mode-control-label">Stride</span>
+      <span className="mode-control-label">Offset step</span>
       <input
         className="mode-slider"
         type="range"
@@ -56,7 +56,7 @@ const ModuloMappingControls = ({
       <span className="mode-control-value">{config.stride}</span>
     </label>
     <label className="mode-control">
-      <span className="mode-control-label">Offset</span>
+      <span className="mode-control-label">Max offset</span>
       <input
         className="mode-slider"
         type="range"
@@ -68,17 +68,6 @@ const ModuloMappingControls = ({
         disabled={disabled}
       />
       <span className="mode-control-value">{config.offset}</span>
-    </label>
-    <label className="mode-control">
-      <span className="mode-control-label">Seed</span>
-      <input
-        className="mode-input"
-        type="number"
-        min={0}
-        value={config.seed}
-        onChange={(event) => onChange({ seed: Number(event.target.value) })}
-        disabled={disabled}
-      />
     </label>
   </div>
 );

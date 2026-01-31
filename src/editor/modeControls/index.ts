@@ -4,3 +4,5 @@ export { default as ModuloMappingControls } from "./ByteRangeControls";
 export { default as GlitchControls } from "./GlitchControls";
 export { default as PixelsortControls } from "./PixelsortControls";
 export { default as VhsControls } from "./VhsControls";
+export { default as BlockShiftControls } from "./BlockShiftControls";
+export { default as VaporwaveControls } from "./VaporwaveControls";

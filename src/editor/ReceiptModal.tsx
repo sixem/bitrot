@@ -13,6 +13,7 @@ import {
 import { getModeDefinition, type ModeId } from "@/modes/definitions";
 import formatBytes from "@/utils/formatBytes";
 import makeDebug from "@/utils/debug";
+import useModalScrollLock from "@/ui/modal/useModalScrollLock";
 
 type ReceiptModalProps = {
   isOpen: boolean;
@@ -35,6 +36,7 @@ const ReceiptModal = ({
   onClose
 }: ReceiptModalProps) => {
   const shouldCloseRef = useRef(false);
+  useModalScrollLock(isOpen);
   const [status, setStatus] = useState<string | null>(null);
   const [outputSizeBytes, setOutputSizeBytes] = useState<number | null>(null);
 

@@ -1,25 +1,24 @@
+import { useState } from "react";
 import type { GlitchConfig } from "@/modes/glitch";
 import type { VhsConfig } from "@/modes/vhs";
 import type { DatablendConfig } from "@/modes/datablend";
 import type { PixelsortConfig } from "@/modes/pixelsort";
 import type { DatamoshConfig } from "@/modes/datamosh";
 import type { ModuloMappingConfig } from "@/modes/moduloMapping";
-import {
-  MODE_DEFINITIONS,
-  getModeDefinition,
-  type ModeConfigMap,
-  type ModeId
-} from "@/modes/definitions";
+import type { BlockShiftConfig } from "@/modes/blockShift";
+import type { VaporwaveConfig } from "@/modes/vaporwave";
+import { getModeDefinition, type ModeConfigMap, type ModeId } from "@/modes/definitions";
 import {
   ModuloMappingControls,
+  BlockShiftControls,
   DatablendControls,
   DatamoshControls,
   GlitchControls,
   PixelsortControls,
-  VhsControls
+  VhsControls,
+  VaporwaveControls
 } from "@/editor/modeControls";
-import Select from "@/ui/controls/Select";
-
+import ModeSelectModal from "@/editor/ModeSelectModal";
 type ModeCardProps = {
   value: ModeId;
   onChange: (value: ModeId) => void;
@@ -33,11 +32,6 @@ type ModeEngineTag = {
   tone: "ffmpeg" | "native";
 };
 
-const MODE_OPTIONS = MODE_DEFINITIONS.map((mode) => ({
-  value: mode.id,
-  label: mode.label
-}));
-
 // Selectable mode card for the processing workflow.
 const ModeCard = ({
   value,
@@ -47,13 +41,16 @@ const ModeCard = ({
   disabled
 }: ModeCardProps) => {
   const activeMode = getModeDefinition(value);
+  const [isModeModalOpen, setIsModeModalOpen] = useState(false);
   const engineTag: ModeEngineTag =
     activeMode.engine === "native"
       ? { label: "Native", tone: "native" }
       : { label: "FFmpeg", tone: "ffmpeg" };
 
-  const handleChange = (nextValue: string) => {
-    onChange(nextValue as ModeId);
+  const handleModeSelect = (nextModeId: ModeId) => {
+    if (nextModeId !== value) {
+      onChange(nextModeId);
+    }
   };
 
   const handleGlitchConfigChange = (patch: Partial<GlitchConfig>) => {
@@ -94,6 +91,20 @@ const ModeCard = ({
   const handleModuloMappingConfigChange = (patch: Partial<ModuloMappingConfig>) => {
     onConfigChange({
       ...(config as ModuloMappingConfig),
+      ...patch
+    });
+  };
+
+  const handleBlockShiftConfigChange = (patch: Partial<BlockShiftConfig>) => {
+    onConfigChange({
+      ...(config as BlockShiftConfig),
+      ...patch
+    });
+  };
+
+  const handleVaporwaveConfigChange = (patch: Partial<VaporwaveConfig>) => {
+    onConfigChange({
+      ...(config as VaporwaveConfig),
       ...patch
     });
   };
@@ -144,6 +155,24 @@ const ModeCard = ({
         />
       );
     }
+    if (value === "block-shift") {
+      return (
+        <BlockShiftControls
+          config={config as BlockShiftConfig}
+          onChange={handleBlockShiftConfigChange}
+          disabled={disabled}
+        />
+      );
+    }
+    if (value === "vaporwave") {
+      return (
+        <VaporwaveControls
+          config={config as VaporwaveConfig}
+          onChange={handleVaporwaveConfigChange}
+          disabled={disabled}
+        />
+      );
+    }
     if (value === "datamosh") {
       return (
         <DatamoshControls
@@ -158,33 +187,48 @@ const ModeCard = ({
 
   return (
     <article className="editor-card editor-mode-card">
-      <div className="editor-card-header">
-        <h2 className="editor-card-title">Mode</h2>
-        <div className="editor-card-tags">
-          {activeMode.isExperimental && (
-            <span className="editor-card-tag" data-tone="beta">
-              Beta
+      <div className="editor-card-header editor-card-header--mode">
+        <div className="editor-card-header-left">
+          <div className="editor-card-tags">
+            {activeMode.isExperimental && (
+              <span className="editor-card-tag" data-tone="beta">
+                Beta
+              </span>
+            )}
+            <span className="editor-card-tag" data-tone={engineTag.tone}>
+              {engineTag.label}
             </span>
-          )}
-          <span className="editor-card-tag" data-tone={engineTag.tone}>
-            {engineTag.label}
+          </div>
+        </div>
+        <div className="editor-card-header-right">
+          <span className="editor-card-mode-name" title={activeMode.label}>
+            {activeMode.label}
           </span>
         </div>
       </div>
       <div className="editor-kv">
         <div className="editor-kv-row editor-kv-row--full">
-          <Select
-            className="editor-select"
-            value={value}
-            onChange={handleChange}
+          <button
+            className="editor-button mode-select-button"
+            type="button"
+            onClick={() => setIsModeModalOpen(true)}
+            aria-haspopup="dialog"
+            aria-expanded={isModeModalOpen}
             disabled={disabled}
-            ariaLabel="Mode"
-            options={MODE_OPTIONS}
-          />
+          >
+            <span className="mode-select-button__label">Browse modes</span>
+            <span className="mode-select-button__hint">View all</span>
+          </button>
         </div>
       </div>
       <p className="editor-help">{activeMode.description}</p>
       {modeControls}
+      <ModeSelectModal
+        isOpen={isModeModalOpen}
+        activeModeId={value}
+        onSelect={handleModeSelect}
+        onClose={() => setIsModeModalOpen(false)}
+      />
     </article>
   );
 };

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
+import { useEffect, useMemo, useRef, type MouseEvent } from "react";
 import { createPortal } from "react-dom";
 import {
   joinOutputPath,
@@ -20,9 +20,7 @@ import {
   normalizeProfile,
   type ExportFormat,
   type ExportProfile,
-  type PassMode,
   type VideoEncoder,
-  type VideoMode,
   type VideoSpeed
 } from "@/jobs/exportProfile";
 import {
@@ -43,11 +41,16 @@ import {
   getExtension,
   parseExtraArgs
 } from "@/jobs/ffmpegArgs";
-import { getNvencSupportStatus, probeNvencSupport } from "@/jobs/encoding";
 import type { VideoMetadata } from "@/system/ffprobe";
-import { pathExists } from "@/system/pathExists";
 import type { ModeId } from "@/modes/definitions";
-import Select from "@/ui/controls/Select";
+import useModalScrollLock from "@/ui/modal/useModalScrollLock";
+import ExportPresetHeader from "@/editor/export/ExportPresetHeader";
+import ExportOutputSection from "@/editor/export/ExportOutputSection";
+import ExportVideoSection from "@/editor/export/ExportVideoSection";
+import ExportAdvancedSection from "@/editor/export/ExportAdvancedSection";
+import useNvencStatus from "@/editor/export/useNvencStatus";
+import useOverwriteCheck from "@/editor/export/useOverwriteCheck";
+import useSizeCapSelection from "@/editor/export/useSizeCapSelection";
 
 export type ExportSettings = OutputPathParts & {
   profile: ExportProfile;
@@ -87,13 +90,8 @@ const ExportModal = ({
   onConfirm
 }: ExportModalProps) => {
   const shouldCloseRef = useRef(false);
-  const [nvencStatus, setNvencStatus] = useState(getNvencSupportStatus());
-  const [overwritePromptPath, setOverwritePromptPath] = useState<string | null>(null);
-  const [missingFolderPath, setMissingFolderPath] = useState<string | null>(null);
-  const [pathCheckWarning, setPathCheckWarning] = useState<string | null>(null);
-  const [isCheckingOverwrite, setIsCheckingOverwrite] = useState(false);
-
-  const nvencAvailable = nvencStatus === "supported";
+  useModalScrollLock(isOpen);
+  const { nvencAvailable, nvencStatus } = useNvencStatus(isOpen);
 
   useEffect(() => {
     if (!isOpen) {
@@ -110,36 +108,6 @@ const ExportModal = ({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [isOpen, onClose]);
 
-  useEffect(() => {
-    if (!isOpen) {
-      return;
-    }
-    let isActive = true;
-    probeNvencSupport()
-      .then(() => {
-        if (isActive) {
-          setNvencStatus(getNvencSupportStatus());
-        }
-      })
-      .catch(() => {
-        if (isActive) {
-          setNvencStatus(getNvencSupportStatus());
-        }
-      });
-    return () => {
-      isActive = false;
-    };
-  }, [isOpen]);
-
-  useEffect(() => {
-    if (!isOpen) {
-      return;
-    }
-    setOverwritePromptPath(null);
-    setMissingFolderPath(null);
-    setPathCheckWarning(null);
-  }, [isOpen, inputPath, settings.folder, settings.fileName, settings.separator]);
-
   const outputPath = joinOutputPath(
     settings.folder,
     settings.fileName,
@@ -149,6 +117,26 @@ const ExportModal = ({
   const isValid = settings.fileName.trim().length > 0;
   const outputMatchesInput =
     !!inputPath && !!outputPath && pathsMatch(inputPath, outputPath);
+  const profile = normalizeProfile(
+    settings.profile ?? DEFAULT_EXPORT_PROFILE,
+    nvencAvailable
+  );
+  const resetKey = `${inputPath ?? ""}|${settings.folder}|${settings.fileName}|${settings.separator}`;
+  const {
+    overwritePromptPath,
+    missingFolderPath,
+    pathCheckWarning,
+    isCheckingOverwrite,
+    handleConfirm
+  } = useOverwriteCheck({
+    isOpen,
+    outputPath,
+    folderPath,
+    isValid,
+    outputMatchesInput,
+    resetKey,
+    onConfirm: () => onConfirm(outputPath, profile)
+  });
   const missingFolderWarning =
     missingFolderPath === ""
       ? "Output folder is required. Choose a destination folder."
@@ -156,10 +144,6 @@ const ExportModal = ({
         ? "Output folder does not exist. Choose an existing folder."
         : null;
 
-  const profile = normalizeProfile(
-    settings.profile ?? DEFAULT_EXPORT_PROFILE,
-    nvencAvailable
-  );
   const allowedEncoders = getAllowedEncoders(profile.format, nvencAvailable);
   const encoderOptions = allowedEncoders.map((encoder) => ({
     value: encoder,
@@ -172,52 +156,27 @@ const ExportModal = ({
     typeof durationSeconds === "number" && Number.isFinite(durationSeconds)
       ? durationSeconds
       : inputMetadata?.durationSeconds;
-  const sizeCapOptions = SIZE_PRESET_OPTIONS;
-  const defaultCustomSizeCap = sizeCapOptions[0]?.kb ?? 5120;
-  // Normalize the optional size cap into a stable number for reuse and narrowing.
-  const sizeCapMb =
-    typeof profile.sizeCapMb === "number" &&
-    Number.isFinite(profile.sizeCapMb) &&
-    profile.sizeCapMb > 0
-      ? profile.sizeCapMb
-      : undefined;
-  const sizeCapPreset =
-    sizeCapMb !== undefined
-      ? sizeCapOptions.find((option) => Math.round(sizeCapMb * 1024) === option.kb)
-      : undefined;
-  const [customSizeCapValue, setCustomSizeCapValue] = useState(() => {
-    if (sizeCapMb !== undefined) {
-      return String(Math.round(sizeCapMb * 1024));
-    }
-    return String(defaultCustomSizeCap);
-  });
-  const [isCustomSizeCap, setIsCustomSizeCap] = useState(
-    sizeCapMb !== undefined && !sizeCapPreset
-  );
-  const sizeCapSelection = isCustomSizeCap
-    ? "custom"
-    : sizeCapPreset
-      ? String(sizeCapPreset.kb)
-      : sizeCapMb !== undefined
-        ? "custom"
-      : "off";
 
-  useEffect(() => {
-    // Use the normalized size to avoid undefined checks inside callbacks.
-    if (sizeCapMb === undefined) {
-      setIsCustomSizeCap(false);
-      return;
-    }
-    const preset = sizeCapOptions.find(
-      (option) => Math.round(sizeCapMb * 1024) === option.kb
-    );
-    if (preset) {
-      setIsCustomSizeCap(false);
-      return;
-    }
-    setCustomSizeCapValue(String(Math.round(sizeCapMb * 1024)));
-    setIsCustomSizeCap(true);
-  }, [sizeCapMb, sizeCapOptions]);
+  const applyProfilePatch = (patch: Partial<ExportProfile>) => {
+    const next = normalizeProfile({ ...profile, ...patch }, nvencAvailable);
+    onChange({ ...settings, profile: next });
+  };
+
+  const sizeCapOptions = SIZE_PRESET_OPTIONS;
+  const {
+    sizeCapSelection,
+    sizeCapSelectOptions,
+    customSizeCapLabel,
+    customSizeCapValue,
+    setCustomSizeCapValue,
+    customInputActive,
+    handleCustomCommit,
+    handleSizeCapChange
+  } = useSizeCapSelection({
+    sizeCapMb: profile.sizeCapMb,
+    sizeCapOptions,
+    onSizeCapChange: (nextSizeCapMb) => applyProfilePatch({ sizeCapMb: nextSizeCapMb })
+  });
   const resolvePresetCodec = (encoder?: VideoEncoder) => {
     if (encoder === "libvpx-vp9") {
       return { key: "vp9", label: "VP9" };
@@ -287,27 +246,12 @@ const ExportModal = ({
     { value: "1pass", label: "1-pass" },
     { value: "2pass", label: "2-pass" }
   ];
-  const sizeCapSelectOptions = [
-    { value: "off", label: "Off" },
-    ...sizeCapOptions.map((option) => ({
-      value: String(option.kb),
-      label: `${option.kb} KB`
-    }))
-  ];
   const videoModeOptions = [
     { value: "encode", label: "Encode" },
     { value: "copy", label: "Passthrough (stream copy)" }
   ];
-  const customSizeCapLabel = customSizeCapValue
-    ? `Custom - ${customSizeCapValue} KB`
-    : "Custom";
   const canUsePassthrough = modeId === "copy" && !trimEnabled;
   const videoMode = canUsePassthrough ? profile.videoMode : "encode";
-
-  const applyProfilePatch = (patch: Partial<ExportProfile>) => {
-    const next = normalizeProfile({ ...profile, ...patch }, nvencAvailable);
-    onChange({ ...settings, profile: next });
-  };
 
   const applyFormatChange = (nextFormat: ExportFormat) => {
     const nextAllowed = getAllowedEncoders(nextFormat, nvencAvailable);
@@ -336,7 +280,6 @@ const ExportModal = ({
     );
     const extension = resolveExtensionForFormat(nextProfile.format);
     const nextFileName = replaceExtension(settings.fileName, extension);
-    setIsCustomSizeCap(false);
     onChange({
       ...settings,
       presetId,
@@ -356,62 +299,6 @@ const ExportModal = ({
     if (shouldClose) {
       onClose();
     }
-  };
-
-  // Confirm export after validating the output folder and overwrite state.
-  const handleConfirm = async () => {
-    if (!isValid || isCheckingOverwrite || outputMatchesInput) {
-      return;
-    }
-
-    if (overwritePromptPath === outputPath) {
-      onConfirm(outputPath, profile);
-      return;
-    }
-    if (pathCheckWarning) {
-      setPathCheckWarning(null);
-      onConfirm(outputPath, profile);
-      return;
-    }
-    if (overwritePromptPath) {
-      setOverwritePromptPath(null);
-    }
-
-    setIsCheckingOverwrite(true);
-    // Verify destination folder exists before checking for overwrite.
-    if (!folderPath) {
-      setMissingFolderPath("");
-      setIsCheckingOverwrite(false);
-      return;
-    }
-    const folderExists = await pathExists(folderPath);
-    if (folderExists === false) {
-      setMissingFolderPath(folderPath);
-      setIsCheckingOverwrite(false);
-      return;
-    }
-    if (folderExists === null) {
-      setPathCheckWarning("Unable to verify the output folder. Click Export to proceed.");
-      setIsCheckingOverwrite(false);
-      return;
-    }
-    if (missingFolderPath) {
-      setMissingFolderPath(null);
-    }
-
-    const exists = await pathExists(outputPath);
-    setIsCheckingOverwrite(false);
-
-    if (exists === null) {
-      setPathCheckWarning("Unable to verify whether the output exists. Click Export to proceed.");
-      return;
-    }
-    if (exists) {
-      setOverwritePromptPath(outputPath);
-      return;
-    }
-
-    onConfirm(outputPath, profile);
   };
 
   const argsPreview = useMemo(() => {
@@ -477,253 +364,71 @@ const ExportModal = ({
         }}
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="export-title">
-          <div className="export-title-main">
-            <h2 id="export-modal-title" className="modal-title">
-              Export settings
-            </h2>
-          </div>
-          <div className="export-title-side">
-            <div className="export-preset">
-              <Select
-                className="export-input export-select export-select--preset"
-                value={settings.presetId ?? DEFAULT_EXPORT_PRESET_ID}
-                ariaLabel="Export preset"
-                options={presetOptions}
-                onChange={(nextValue) =>
-                  handlePresetChange(nextValue as ExportPresetId)
-                }
-              />
-              <p className="export-help export-help--tight">
-                {getExportPreset(
-                  settings.presetId ?? DEFAULT_EXPORT_PRESET_ID
-                ).description}
-              </p>
-            </div>
-          </div>
-        </div>
+        <ExportPresetHeader
+          presetOptions={presetOptions}
+          presetId={settings.presetId ?? DEFAULT_EXPORT_PRESET_ID}
+          presetDescription={
+            getExportPreset(settings.presetId ?? DEFAULT_EXPORT_PRESET_ID).description
+          }
+          onPresetChange={handlePresetChange}
+        />
         <div className="export-form scrollable">
-          <div className="export-section export-section--wide">
-            <div className="export-section-header">Output</div>
-            <div className="export-grid export-grid--output">
-              <label className="export-field">
-                <span className="export-label">Output folder</span>
-                <input
-                  className="export-input"
-                  type="text"
-                  value={settings.folder}
-                  onChange={(event) =>
-                    onChange({ ...settings, folder: event.target.value })
-                  }
-                  placeholder="Folder path"
-                />
-              </label>
-              <label className="export-field">
-                <span className="export-label">File name</span>
-                <input
-                  className="export-input"
-                  type="text"
-                  value={settings.fileName}
-                  onChange={(event) =>
-                    onChange({ ...settings, fileName: event.target.value })
-                  }
-                  placeholder="output.bitrot.mp4"
-                />
-              </label>
-            </div>
-            <p className="export-path" title={outputPath}>
-              {outputPath || "Output path will appear here."}
-            </p>
-          </div>
+          <ExportOutputSection
+            settings={settings}
+            outputPath={outputPath}
+            onChange={onChange}
+          />
 
-          <div className="export-section export-section--wide">
-            <div className="export-section-header">Format &amp; video</div>
-            <div className="export-grid">
-              <label className="export-field">
-                <span className="export-label">Format</span>
-                <Select
-                  className="export-input export-select"
-                  value={profile.format}
-                  options={formatOptions}
-                  onChange={(nextValue) =>
-                    applyFormatChange(nextValue as ExportFormat)
-                  }
-                />
-              </label>
-              <label className="export-field">
-                <span className="export-label">Encoder</span>
-                <Select
-                  className="export-input export-select"
-                  value={profile.videoEncoder}
-                  options={encoderOptions}
-                  onChange={(nextValue) => {
-                    const nextEncoder = nextValue as VideoEncoder;
-                    const nextQuality = clampQuality(nextEncoder, profile.quality);
-                    applyProfilePatch({
-                      videoEncoder: nextEncoder,
-                      quality: nextQuality
-                    });
-                  }}
-                />
-              </label>
-              <label className="export-field">
-                <span className="export-label">Speed</span>
-                <Select
-                  className="export-input export-select"
-                  value={profile.videoSpeed}
-                  options={speedOptions}
-                  onChange={(nextValue) =>
-                    applyProfilePatch({
-                      videoSpeed: nextValue as VideoSpeed
-                    })
-                  }
-                />
-              </label>
-              <label className="export-field">
-                <span className="export-label">{qualityLabel}</span>
-                <input
-                  className="export-input export-input--range range-input"
-                  type="range"
-                  min={qualityRange.min}
-                  max={qualityRange.max}
-                  step={qualityRange.step}
-                  value={profile.quality}
-                  onChange={(event) =>
-                    applyProfilePatch({
-                      quality: Number.parseInt(event.target.value, 10)
-                    })
-                  }
-                />
-                <p className="export-help">
-                  {qualityLabel} {profile.quality}
-                </p>
-              </label>
-              <label className="export-field">
-                <span className="export-label">Passes</span>
-                <Select
-                  className="export-input export-select"
-                  value={isVp9 ? profile.passMode : "auto"}
-                  disabled={!isVp9}
-                  options={passModeOptions}
-                  onChange={(nextValue) =>
-                    applyProfilePatch({ passMode: nextValue as PassMode })
-                  }
-                />
-                {!isVp9 && (
-                  <p className="export-help">Pass selection is VP9-only.</p>
-                )}
-              </label>
-              <label className="export-field">
-                <span className="export-label">Size (best-effort, KB)</span>
-                <Select
-                  className="export-input export-select"
-                  value={sizeCapSelection}
-                  options={sizeCapSelectOptions}
-                  customInput={{
-                    valueKey: "custom",
-                    label: "Custom",
-                    displayLabel: customSizeCapLabel,
-                    value: customSizeCapValue,
-                    unit: "KB",
-                    placeholder: "Size in KB",
-                    onValueChange: setCustomSizeCapValue,
-                    onCommit: (nextValue) => {
-                      const parsed = Number.parseFloat(nextValue);
-                      if (!Number.isFinite(parsed) || parsed <= 0) {
-                        return;
-                      }
-                      setIsCustomSizeCap(true);
-                      applyProfilePatch({ sizeCapMb: parsed / 1024 });
-                    }
-                  }}
-                  customInputActive={sizeCapSelection === "custom"}
-                  onChange={(nextValue) => {
-                    if (nextValue === "off") {
-                      setIsCustomSizeCap(false);
-                      applyProfilePatch({ sizeCapMb: undefined });
-                      return;
-                    }
-                    if (nextValue === "custom") {
-                      const parsed = Number.parseFloat(customSizeCapValue);
-                      const fallback = sizeCapMb ?? (sizeCapOptions[0]?.mb ?? 5);
-                      setIsCustomSizeCap(true);
-                      applyProfilePatch({
-                        sizeCapMb:
-                          Number.isFinite(parsed) && parsed > 0
-                            ? parsed / 1024
-                            : fallback
-                      });
-                      return;
-                    }
-                    const parsed = Number.parseFloat(nextValue);
-                    setIsCustomSizeCap(false);
-                    applyProfilePatch({
-                      sizeCapMb: Number.isFinite(parsed) ? parsed / 1024 : undefined
-                    });
-                  }}
-                />
-              </label>
-              <label className="export-field">
-                <span className="export-label">Video handling</span>
-                <Select
-                  className="export-input export-select"
-                  value={videoMode}
-                  disabled={!canUsePassthrough}
-                  options={videoModeOptions}
-                  onChange={(nextValue) =>
-                    applyProfilePatch({
-                      videoMode: nextValue as VideoMode
-                    })
-                  }
-                />
-                {!canUsePassthrough && (
-                  <p className="export-help">
-                    Passthrough is only available for the Passthrough mode without
-                    trim.
-                  </p>
-                )}
-              </label>
-              <label className="export-field export-field--toggle">
-                <span className="export-label">Audio</span>
-                <button
-                  className="export-toggle export-toggle--input"
-                  type="button"
-                  data-active={profile.audioEnabled}
-                  onClick={() =>
-                    applyProfilePatch({ audioEnabled: !profile.audioEnabled })
-                  }
-                >
-                  {profile.audioEnabled ? "Audio on" : "Audio off"}
-                </button>
-              </label>
-            </div>
-            {passthroughWarning && (
-              <p className="export-warning">{passthroughWarning}</p>
-            )}
-          </div>
+          <ExportVideoSection
+            profile={profile}
+            formatOptions={formatOptions}
+            encoderOptions={encoderOptions}
+            speedOptions={speedOptions}
+            passModeOptions={passModeOptions}
+            qualityRange={qualityRange}
+            qualityLabel={qualityLabel}
+            isVp9={isVp9}
+            sizeCapSelection={sizeCapSelection}
+            sizeCapSelectOptions={sizeCapSelectOptions}
+            customSizeCapLabel={customSizeCapLabel}
+            customSizeCapValue={customSizeCapValue}
+            customInputActive={customInputActive}
+            videoMode={videoMode}
+            canUsePassthrough={canUsePassthrough}
+            videoModeOptions={videoModeOptions}
+            passthroughWarning={passthroughWarning}
+            onFormatChange={applyFormatChange}
+            onEncoderChange={(nextEncoder) => {
+              const nextQuality = clampQuality(nextEncoder, profile.quality);
+              applyProfilePatch({ videoEncoder: nextEncoder, quality: nextQuality });
+            }}
+            onSpeedChange={(nextSpeed) =>
+              applyProfilePatch({ videoSpeed: nextSpeed })
+            }
+            onQualityChange={(nextQuality) =>
+              applyProfilePatch({ quality: nextQuality })
+            }
+            onPassModeChange={(nextMode) =>
+              applyProfilePatch({ passMode: nextMode })
+            }
+            onSizeCapChange={handleSizeCapChange}
+            onCustomSizeCapValueChange={setCustomSizeCapValue}
+            onCustomSizeCapCommit={handleCustomCommit}
+            onVideoModeChange={(nextMode) =>
+              applyProfilePatch({ videoMode: nextMode })
+            }
+            onToggleAudio={() =>
+              applyProfilePatch({ audioEnabled: !profile.audioEnabled })
+            }
+          />
 
-          <div className="export-section export-section--wide">
-            <div className="export-section-header">Advanced</div>
-            <label className="export-field">
-              <span className="export-label">Extra ffmpeg args (safe)</span>
-              <textarea
-                className="export-input export-textarea"
-                value={profile.extraArgs}
-                onChange={(event) =>
-                  applyProfilePatch({ extraArgs: event.target.value })
-                }
-                placeholder='Example: -tune film -profile:v high'
-              />
-              <p className="export-help">
-                Unsupported or unsafe args are ignored. Common flags: -tune,
-                -profile:v, -level, -threads, -row-mt.
-              </p>
-            </label>
-            <div className="export-args">
-              <span className="export-label">Generated args</span>
-              <code>{argsPreview || "--"}</code>
-            </div>
-          </div>
+          <ExportAdvancedSection
+            extraArgs={profile.extraArgs}
+            argsPreview={argsPreview}
+            onExtraArgsChange={(nextValue) =>
+              applyProfilePatch({ extraArgs: nextValue })
+            }
+          />
 
           {outputMatchesInput && (
             <p className="export-warning export-warning--error">
