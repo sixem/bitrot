@@ -34,6 +34,10 @@ const buildCleanupEntry = (outputPath: string, modeId?: ModeId): CleanupEntry =>
     tempPaths.push(buildNativeTempPath(outputPath, "pixelsort"));
   } else if (mode.runner === "modulo-mapping") {
     tempPaths.push(buildNativeTempPath(outputPath, "modulo-mapping"));
+  } else if (mode.runner === "block-shift") {
+    tempPaths.push(buildNativeTempPath(outputPath, "block-shift"));
+  } else if (mode.runner === "vaporwave") {
+    tempPaths.push(buildNativeTempPath(outputPath, "vaporwave"));
   }
 
   return {

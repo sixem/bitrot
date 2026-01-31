@@ -9,13 +9,10 @@ import {
 import { runDatamoshJob } from "@/jobs/datamoshRunner";
 import { runPixelsortJob } from "@/jobs/pixelsortRunner";
 import { runModuloMappingJob } from "@/jobs/byteRangeRunner";
-import { normalizeTrimRange, type TrimRange } from "@/jobs/trim";
-import {
-  SAFE_SCALE_FILTER,
-  buildAudioArgs,
-  buildContainerArgs,
-  parseExtraArgs
-} from "@/jobs/ffmpegArgs";
+import { runBlockShiftJob } from "@/jobs/blockShiftRunner";
+import { runVaporwaveJob } from "@/jobs/vaporwaveRunner";
+import { normalizeTrimRange } from "@/jobs/trim";
+import { buildFfmpegArgs } from "@/jobs/ffmpegRunnerArgs";
 import {
   spawnWithFallback,
   type CommandHandle,
@@ -25,7 +22,8 @@ import { sanitizePath } from "@/system/path";
 import {
   getModeDefinition,
   type ModeConfigMap,
-  type ModeId
+  type ModeId,
+  type ModeRunner
 } from "@/modes/definitions";
 import {
   defaultDatamoshConfig,
@@ -39,9 +37,16 @@ import {
   defaultModuloMappingConfig,
   type ModuloMappingConfig
 } from "@/modes/moduloMapping";
+import {
+  defaultBlockShiftConfig,
+  type BlockShiftConfig
+} from "@/modes/blockShift";
+import {
+  defaultVaporwaveConfig,
+  type VaporwaveConfig
+} from "@/modes/vaporwave";
 import type { JobProgress } from "@/jobs/types";
 import {
-  buildVideoEncodingArgs,
   estimateInputBitrateCapKbps,
   estimateTargetBitrateKbps
 } from "@/jobs/exportEncoding";
@@ -76,100 +81,109 @@ export type FfmpegRunHandle = {
 
 const debug = makeDebug("jobs:runner");
 
-const buildTrimArgs = (range?: TrimRange) => {
-  if (!range) {
-    return [];
-  }
-  return ["-ss", range.start.toFixed(3), "-to", range.end.toFixed(3)];
+type RunnerContext = {
+  asset: VideoAsset;
+  outputPath: string;
+  options: FfmpegRunOptions;
+  profile: ExportProfile;
+  callbacks: FfmpegRunCallbacks;
 };
 
-const buildArgs = (
-  inputPath: string,
-  outputPath: string,
-  modeId: ModeId | undefined,
-  modeConfig: ModeConfigMap[ModeId] | undefined,
-  profile: ExportProfile,
-  trimRange: TrimRange | undefined,
-  options: {
-    bitrateCapKbps?: number;
-    targetBitrateKbps?: number;
-    needsEvenDimensions?: boolean;
-    pass?: 1 | 2;
-    passLogFile?: string;
-    audioEnabledOverride?: boolean;
-    includeProgress?: boolean;
-  }
-) => {
-  const mode = getModeDefinition(modeId);
-  const resolvedConfig = modeConfig ?? mode.defaultConfig;
-  const shouldCopy =
-    profile.videoMode === "copy" && !trimRange && !mode.buildFilter;
-  const needsEvenDimensions = options.needsEvenDimensions ?? true;
-  const audioEnabled =
-    options.audioEnabledOverride ?? profile.audioEnabled ?? true;
-  // Always pick the first video + (optional) first audio stream explicitly.
-  const args = [
-    "-y",
-    "-hide_banner",
-    "-i",
-    inputPath,
-    ...buildTrimArgs(trimRange),
-    "-map",
-    "0:v:0"
-  ];
-  if (audioEnabled) {
-    args.push("-map", "0:a?");
-  }
+type RunnerHandler = (context: RunnerContext) => Promise<FfmpegRunHandle>;
 
-  const filters: string[] = [];
-  if (mode.buildFilter) {
-    filters.push(mode.buildFilter(resolvedConfig));
-  }
-  if (!shouldCopy && needsEvenDimensions) {
-    filters.push(SAFE_SCALE_FILTER);
-  }
-  if (filters.length > 0) {
-    args.push("-vf", filters.join(","));
-  }
+// Prefer a caller override, otherwise clone defaults to avoid accidental mutation.
+const resolveConfig = <T>(
+  override: T | undefined,
+  defaults: T
+) => (override ? override : { ...defaults });
 
-  if (shouldCopy) {
-    args.push("-c:v", "copy");
-    if (audioEnabled) {
-      args.push("-c:a", "copy");
-    } else {
-      args.push("-an");
-    }
-    const containerArgs = buildContainerArgs(outputPath);
-    if (containerArgs.length > 0) {
-      args.push(...containerArgs);
-    }
-  } else {
-    const bitrateCap =
-      options.targetBitrateKbps ?? options.bitrateCapKbps;
-    args.push(
-      ...buildVideoEncodingArgs(profile, {
-        bitrateCapKbps: bitrateCap,
-        targetBitrateKbps: options.targetBitrateKbps,
-        pass: options.pass,
-        passLogFile: options.passLogFile
-      }),
-      "-pix_fmt",
-      "yuv420p",
-      ...buildAudioArgs(outputPath, { enabled: audioEnabled }),
-      ...buildContainerArgs(outputPath)
+// Mode-specific pipelines keyed by mode runner string.
+const runnerStrategies: Partial<Record<ModeRunner, RunnerHandler>> = {
+  datamosh: async ({ asset, outputPath, options, profile, callbacks }) => {
+    const datamoshConfig = resolveConfig(
+      options.modeConfig as DatamoshConfig | undefined,
+      defaultDatamoshConfig
+    );
+    debug("delegating to datamosh pipeline");
+    return runDatamoshJob(
+      asset,
+      outputPath,
+      options.durationSeconds,
+      datamoshConfig,
+      profile,
+      options.trimStartSeconds,
+      options.trimEndSeconds,
+      callbacks
+    );
+  },
+  pixelsort: async ({ asset, outputPath, options, profile, callbacks }) => {
+    const pixelsortConfig = resolveConfig(
+      options.modeConfig as PixelsortConfig | undefined,
+      defaultPixelsortConfig
+    );
+    debug("delegating to pixelsort pipeline");
+    return runPixelsortJob(
+      asset,
+      outputPath,
+      options.durationSeconds,
+      pixelsortConfig,
+      profile,
+      options.trimStartSeconds,
+      options.trimEndSeconds,
+      callbacks
+    );
+  },
+  "modulo-mapping": async ({ asset, outputPath, options, profile, callbacks }) => {
+    const moduloConfig = resolveConfig(
+      options.modeConfig as ModuloMappingConfig | undefined,
+      defaultModuloMappingConfig
+    );
+    debug("delegating to modulo mapping pipeline");
+    return runModuloMappingJob(
+      asset,
+      outputPath,
+      options.durationSeconds,
+      moduloConfig,
+      profile,
+      options.trimStartSeconds,
+      options.trimEndSeconds,
+      callbacks
+    );
+  },
+  "block-shift": async ({ asset, outputPath, options, profile, callbacks }) => {
+    const blockShiftConfig = resolveConfig(
+      options.modeConfig as BlockShiftConfig | undefined,
+      defaultBlockShiftConfig
+    );
+    debug("delegating to block shift pipeline");
+    return runBlockShiftJob(
+      asset,
+      outputPath,
+      options.durationSeconds,
+      blockShiftConfig,
+      profile,
+      options.trimStartSeconds,
+      options.trimEndSeconds,
+      callbacks
+    );
+  },
+  vaporwave: async ({ asset, outputPath, options, profile, callbacks }) => {
+    const vaporwaveConfig = resolveConfig(
+      options.modeConfig as VaporwaveConfig | undefined,
+      defaultVaporwaveConfig
+    );
+    debug("delegating to vaporwave pipeline");
+    return runVaporwaveJob(
+      asset,
+      outputPath,
+      options.durationSeconds,
+      vaporwaveConfig,
+      profile,
+      options.trimStartSeconds,
+      options.trimEndSeconds,
+      callbacks
     );
   }
-
-  const extraArgs = parseExtraArgs(profile.extraArgs);
-  if (extraArgs.length > 0) {
-    args.push(...extraArgs);
-  }
-
-  if (options.includeProgress !== false) {
-    args.push("-progress", "pipe:1", "-nostats");
-  }
-  args.push(outputPath);
-  return args;
 };
 
 const deriveEncodingMetadata = (metadata: VideoMetadata) => {
@@ -253,53 +267,9 @@ export const runFfmpegJob = async (
     inputPath,
     outputPath
   );
-  if (activeMode.runner === "datamosh") {
-    const datamoshConfig = (options.modeConfig as DatamoshConfig | undefined) ?? {
-      ...defaultDatamoshConfig
-    };
-    debug("delegating to datamosh pipeline");
-    return runDatamoshJob(
-      asset,
-      outputPath,
-      options.durationSeconds,
-      datamoshConfig,
-      profile,
-      options.trimStartSeconds,
-      options.trimEndSeconds,
-      callbacks
-    );
-  }
-  if (activeMode.runner === "pixelsort") {
-    const pixelsortConfig = (options.modeConfig as PixelsortConfig | undefined) ?? {
-      ...defaultPixelsortConfig
-    };
-    debug("delegating to pixelsort pipeline");
-    return runPixelsortJob(
-      asset,
-      outputPath,
-      options.durationSeconds,
-      pixelsortConfig,
-      profile,
-      options.trimStartSeconds,
-      options.trimEndSeconds,
-      callbacks
-    );
-  }
-  if (activeMode.runner === "modulo-mapping") {
-    const moduloConfig = (options.modeConfig as ModuloMappingConfig | undefined) ?? {
-      ...defaultModuloMappingConfig
-    };
-    debug("delegating to modulo mapping pipeline");
-    return runModuloMappingJob(
-      asset,
-      outputPath,
-      options.durationSeconds,
-      moduloConfig,
-      profile,
-      options.trimStartSeconds,
-      options.trimEndSeconds,
-      callbacks
-    );
+  const handler = runnerStrategies[activeMode.runner];
+  if (handler) {
+    return handler({ asset, outputPath, options, profile, callbacks });
   }
 
   const trimRange = normalizeTrimRange(
@@ -376,19 +346,15 @@ export const runFfmpegJob = async (
   };
 
   if (!shouldTwoPass) {
-    const args = buildArgs(
-      inputPath,
-      outputPath,
-      options.modeId,
-      options.modeConfig,
+    const args = buildFfmpegArgs(inputPath, outputPath, {
+      modeId: options.modeId,
+      modeConfig: options.modeConfig,
       profile,
       trimRange,
-      {
-        bitrateCapKbps,
-        targetBitrateKbps,
-        needsEvenDimensions
-      }
-    );
+      bitrateCapKbps,
+      targetBitrateKbps,
+      needsEvenDimensions
+    });
     debug("ffmpeg args: %o", args);
     const feedProgress = createProgressHandler(0, 100);
     const { child } = await spawnWithFallback(
@@ -434,37 +400,29 @@ export const runFfmpegJob = async (
     activeChild = child;
   };
 
-  const pass1Args = buildArgs(
-    inputPath,
-    pass1Output,
-    options.modeId,
-    options.modeConfig,
+  const pass1Args = buildFfmpegArgs(inputPath, pass1Output, {
+    modeId: options.modeId,
+    modeConfig: options.modeConfig,
     profile,
     trimRange,
-    {
-      bitrateCapKbps,
-      targetBitrateKbps,
-      needsEvenDimensions,
-      pass: 1,
-      passLogFile: passLogPrefix,
-      audioEnabledOverride: false
-    }
-  );
-  const pass2Args = buildArgs(
-    inputPath,
-    outputPath,
-    options.modeId,
-    options.modeConfig,
+    bitrateCapKbps,
+    targetBitrateKbps,
+    needsEvenDimensions,
+    pass: 1,
+    passLogFile: passLogPrefix,
+    audioEnabledOverride: false
+  });
+  const pass2Args = buildFfmpegArgs(inputPath, outputPath, {
+    modeId: options.modeId,
+    modeConfig: options.modeConfig,
     profile,
     trimRange,
-    {
-      bitrateCapKbps,
-      targetBitrateKbps,
-      needsEvenDimensions,
-      pass: 2,
-      passLogFile: passLogPrefix
-    }
-  );
+    bitrateCapKbps,
+    targetBitrateKbps,
+    needsEvenDimensions,
+    pass: 2,
+    passLogFile: passLogPrefix
+  });
 
   debug("ffmpeg pass1 args: %o", pass1Args);
   debug("ffmpeg pass2 args: %o", pass2Args);
