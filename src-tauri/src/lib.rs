@@ -3,7 +3,7 @@ mod modes;
 mod native;
 
 use ffmpeg::{frames as ffprobe_frames, jobs as ffmpeg_jobs};
-use modes::{byte_range, datamosh, pixelsort};
+use modes::{block_shift, byte_range, datamosh, pixelsort, vaporwave};
 use native::preview as native_preview;
 
 use std::path::{Path, PathBuf};
@@ -170,6 +170,8 @@ pub fn run() {
     .plugin(tauri_plugin_shell::init())
     .manage(pixelsort::jobs::PixelsortJobs::default())
     .manage(byte_range::ModuloMappingJobs::default())
+    .manage(block_shift::BlockShiftJobs::default())
+    .manage(vaporwave::VaporwaveJobs::default())
     .manage(native_preview::PreviewBuffers::default())
     .manage(ffmpeg_jobs::FfmpegJobs::default())
     .invoke_handler(tauri::generate_handler![
@@ -190,6 +192,18 @@ pub fn run() {
       byte_range::modulo_mapping_preview_append,
       byte_range::modulo_mapping_preview_finish,
       byte_range::modulo_mapping_preview_discard,
+      block_shift::block_shift_process,
+      block_shift::block_shift_cancel,
+      block_shift::block_shift_preview_start,
+      block_shift::block_shift_preview_append,
+      block_shift::block_shift_preview_finish,
+      block_shift::block_shift_preview_discard,
+      vaporwave::vaporwave_process,
+      vaporwave::vaporwave_cancel,
+      vaporwave::vaporwave_preview_start,
+      vaporwave::vaporwave_preview_append,
+      vaporwave::vaporwave_preview_finish,
+      vaporwave::vaporwave_preview_discard,
       pixelsort::jobs::pixelsort_process,
       pixelsort::jobs::pixelsort_cancel,
       pixelsort::preview::pixelsort_preview_start,
