@@ -12,6 +12,7 @@
   font-weight: var(--caps-weight, inherit);
 }
 
+// === Buttons ===
 :where(
   .ui-button,
   .system-gate-button,
@@ -77,6 +78,7 @@
   filter: brightness(var(--button-hover-brightness));
 }
 
+// === Inputs & textareas ===
 // Shared text and select controls.
 :where(.ui-control, .export-input, .export-select, .editor-select, .mode-input, .export-textarea) {
   --control-padding: 8px 10px;
@@ -104,12 +106,13 @@
   filter: brightness(var(--control-hover-brightness));
 }
 
+// === Selects ===
 // Shared select chevron: use the same SVG + offsets everywhere we opt into custom selects.
 :where(.ui-select-trigger, .export-select, .editor-select) {
   --select-chevron-size: 12px 8px;
   --select-chevron-offset: 18px;
   --select-chevron-padding: 36px;
-  --select-chevron: url("data:image/svg+xml,%3Csvg width='12' height='8' viewBox='0 0 12 8' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M2 2l4 4 4-4' stroke='%23cfd4d8' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  // Theme owns the chevron icon so light/dark palettes can swap it.
 
   --control-cursor: pointer;
   appearance: none;
@@ -248,6 +251,7 @@
   @include caps-label;
 }
 
+// === Range sliders ===
 // Range sliders: shared base handles styling, this class just tunes sizing + track tint.
 :where(.range-input, .mode-slider, .preview-volume) {
   --range-height: 14px;
@@ -316,6 +320,7 @@
   --range-track-color: var(--scrub-track);
 }
 
+// === Pills / tags ===
 // Pill tags for labels and status chips.
 :where(.ui-pill, .editor-pill, .editor-card-tag, .export-tag) {
   --pill-font-size: 0.65rem;

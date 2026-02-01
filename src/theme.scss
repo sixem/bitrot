@@ -2,317 +2,360 @@
 @use "sass:map";
 
 // Theme tokens and helpers live here so palette changes stay isolated.
+// Token maps are split into small, named sections so each theme is easy to scan.
+
+@function merge-maps($maps...) {
+  $result: ();
+  @each $map-item in $maps {
+    $result: map.merge($result, $map-item);
+  }
+  @return $result;
+}
+
+// Overlay tokens define glass/scrim surfaces that themes can swap wholesale via $*-overlays.
+// Keep these maps aligned so per-theme overrides remain predictable.
+$overlay-tokens-dark: (
+  badge-bg: rgba(0, 0, 0, 0.6),
+  overlay-panel-bg: rgba(0, 0, 0, 0.6),
+  panel-bg: rgba(0, 0, 0, 0.35),
+  panel-bg-soft: rgba(0, 0, 0, 0.3),
+  panel-item-bg: rgba(0, 0, 0, 0.4),
+  panel-item-hover-bg: rgba(255, 255, 255, 0.04),
+  tag-bg: rgba(0, 0, 0, 0.45),
+  chip-bg: rgba(0, 0, 0, 0.4),
+  chip-border: rgba(255, 255, 255, 0.12),
+  panel-divider: rgba(255, 255, 255, 0.12),
+  preview-overlay-bg: rgba(0, 0, 0, 0.45),
+  scrim-strong: rgba(0, 0, 0, 0.86),
+  scrim-soft: rgba(0, 0, 0, 0.78),
+  scrim-strong-blur: rgba(0, 0, 0, 0.8),
+  scrim-soft-blur: rgba(0, 0, 0, 0.7),
+  drag-overlay-bg: rgba(0, 0, 0, 0.72),
+  drag-overlay-bg-blur: rgba(0, 0, 0, 0.55),
+  toast-bg: rgba(10, 10, 10, 0.82)
+);
+
+// Glass/overlay tokens tuned for the light theme.
+$overlay-tokens-light: (
+  badge-bg: rgba(0, 0, 0, 0.08),
+  overlay-panel-bg: rgba(255, 255, 255, 0.9),
+  panel-bg: rgba(0, 0, 0, 0.04),
+  panel-bg-soft: rgba(0, 0, 0, 0.03),
+  panel-item-bg: rgba(0, 0, 0, 0.06),
+  panel-item-hover-bg: rgba(0, 0, 0, 0.05),
+  tag-bg: rgba(0, 0, 0, 0.08),
+  chip-bg: rgba(0, 0, 0, 0.06),
+  chip-border: rgba(0, 0, 0, 0.12),
+  panel-divider: rgba(0, 0, 0, 0.08),
+  preview-overlay-bg: rgba(255, 255, 255, 0.8),
+  scrim-strong: rgba(0, 0, 0, 0.4),
+  scrim-soft: rgba(0, 0, 0, 0.3),
+  scrim-strong-blur: rgba(0, 0, 0, 0.32),
+  scrim-soft-blur: rgba(0, 0, 0, 0.24),
+  drag-overlay-bg: rgba(0, 0, 0, 0.35),
+  drag-overlay-bg-blur: rgba(0, 0, 0, 0.25),
+  toast-bg: rgba(255, 255, 255, 0.9)
+);
+
+// Shared button and control surfaces.
+$button-tokens-dark: (
+  button-bg-soft: rgba(0, 0, 0, 0.35),
+  button-bg-medium: rgba(0, 0, 0, 0.45),
+  button-bg-strong: rgba(0, 0, 0, 0.55),
+  overlay-button-bg: rgba(0, 0, 0, 0.55),
+  overlay-button-color: #f5f5f5,
+  overlay-button-border: rgba(255, 255, 255, 0.3),
+  overlay-button-active-color: #aaf5c3,
+  control-bg-muted: rgba(0, 0, 0, 0.5),
+  select-option-hover-bg: rgba(255, 255, 255, 0.06),
+  select-divider: rgba(255, 255, 255, 0.06),
+  focus-ring: rgba(255, 255, 255, 0.08),
+  pill-bg-default: rgba(0, 0, 0, 0.35),
+  pill-bg-strong: rgba(0, 0, 0, 0.5)
+);
+
+$button-tokens-light: (
+  button-bg-soft: rgba(0, 0, 0, 0.06),
+  button-bg-medium: rgba(0, 0, 0, 0.1),
+  button-bg-strong: rgba(0, 0, 0, 0.14),
+  overlay-button-bg: rgba(0, 0, 0, 0.7),
+  overlay-button-color: #ffffff,
+  overlay-button-border: rgba(255, 255, 255, 0.65),
+  overlay-button-active-color: #ffffff,
+  preview-button-bg: rgba(0, 0, 0, 0.14),
+  preview-button-ghost-bg: rgba(0, 0, 0, 0.1),
+  control-bg-muted: rgba(0, 0, 0, 0.08),
+  select-option-hover-bg: rgba(0, 0, 0, 0.05),
+  select-divider: rgba(0, 0, 0, 0.08),
+  focus-ring: rgba(0, 0, 0, 0.16),
+  pill-bg-default: rgba(0, 0, 0, 0.06),
+  pill-bg-strong: rgba(0, 0, 0, 0.1)
+);
+
+// Preview surfaces stay identical within the dark and light sets.
+$preview-tokens-dark: (
+  preview-surface-glow: rgba(30, 30, 30, 0.25),
+  preview-surface-base: #030303,
+  preview-frame-bg: #000
+);
+
+$preview-tokens-light: (
+  preview-surface-glow: rgba(0, 0, 0, 0.06),
+  preview-surface-base: #f1f1f1,
+  preview-frame-bg: #000
+);
+
+// Range slider knobs are tuned for each luminance range.
+$range-thumb-dark: (
+  range-thumb-shadow: 0 0 6px rgba(0, 0, 0, 0.6)
+);
+
+$range-thumb-light: (
+  range-thumb-shadow: 0 0 6px rgba(0, 0, 0, 0.2)
+);
+
+// Reuse shadow and status palettes where possible.
+$shadow-tokens-dark: (
+  card: 0 10px 24px rgba(0, 0, 0, 0.28),
+  modal: 0 20px 60px rgba(0, 0, 0, 0.6),
+  lift: 0 24px 70px rgba(0, 0, 0, 0.6),
+  menu: 0 18px 40px rgba(0, 0, 0, 0.6),
+  overlay: 0 0 24px rgba(0, 0, 0, 0.4)
+);
+
+$shadow-tokens-light: (
+  card: 0 10px 24px rgba(0, 0, 0, 0.12),
+  modal: 0 20px 60px rgba(0, 0, 0, 0.2),
+  lift: 0 24px 70px rgba(0, 0, 0, 0.18),
+  menu: 0 18px 40px rgba(0, 0, 0, 0.18),
+  overlay: 0 0 24px rgba(0, 0, 0, 0.12)
+);
+
+$status-tokens-dark: (
+  success: #aaf5c3,
+  error: #ff9292,
+  warning: #ffdd96,
+  info: #c4d4ff
+);
+
+$status-tokens-light: (
+  success: #3aa86b,
+  error: #d95c5c,
+  warning: #c9872d,
+  info: #2f6cff
+);
+
+// Midnight theme sections.
+$midnight-core: (
+  bg: #000,
+  fg: #f5f5f5,
+  muted: rgba(255, 255, 255, 0.7),
+  muted-strong: rgba(255, 255, 255, 0.55),
+  border: rgba(255, 255, 255, 0.2),
+  border-strong: rgba(255, 255, 255, 0.5),
+  glow: rgba(255, 255, 255, 0.16),
+  accent: #7bffa8,
+  accent-contrast: #050505,
+  surface-1: #050505,
+  surface-2: #080808,
+  surface-3: #0a0a0a,
+  surface-4: #111111,
+  surface-5: #131313,
+  bg-elev-1: #050505,
+  scrollbar-track-color: #000
+);
+
+// Per-theme engine tag hues override the derived engine-* tokens in theme-vars.
+$midnight-engine: (
+  engine-native: #ffdd96,
+  engine-ffmpeg: #c4d4ff
+);
+
+$midnight-overlays: $overlay-tokens-dark;
+$midnight-buttons: $button-tokens-dark;
+$midnight-preview: $preview-tokens-dark;
+$midnight-controls: $range-thumb-dark;
+
+$midnight-landing: (
+  landing-glow-1: rgba(18, 70, 52, 0.4),
+  landing-glow-2: rgba(12, 50, 38, 0.34),
+  landing-glow-3: rgba(16, 60, 44, 0.3),
+  landing-glow-4: rgba(50, 24, 90, 0.36),
+  landing-glow-5: rgba(36, 16, 70, 0.3),
+  landing-glow-6: rgba(30, 12, 60, 0.28)
+);
+
+// Ember theme sections.
+$ember-core: (
+  bg: #000,
+  fg: #f5f5f5,
+  muted: rgba(255, 255, 255, 0.7),
+  muted-strong: rgba(255, 255, 255, 0.55),
+  border: rgba(255, 255, 255, 0.2),
+  border-strong: rgba(255, 255, 255, 0.5),
+  glow: rgba(255, 132, 118, 0.18),
+  accent: #ff8476,
+  accent-contrast: #050505,
+  surface-1: #050505,
+  surface-2: #080808,
+  surface-3: #0a0a0a,
+  surface-4: #111111,
+  surface-5: #131313,
+  bg-elev-1: #050505,
+  scrollbar-track-color: #000
+);
+
+$ember-engine: (
+  engine-native: #ffc08a,
+  engine-ffmpeg: #b8d0ff
+);
+
+$ember-overlays: $overlay-tokens-dark;
+$ember-buttons: $button-tokens-dark;
+$ember-preview: $preview-tokens-dark;
+$ember-controls: $range-thumb-dark;
+
+$ember-landing: (
+  landing-glow-1: rgba(90, 32, 26, 0.42),
+  landing-glow-2: rgba(70, 22, 18, 0.34),
+  landing-glow-3: rgba(98, 38, 30, 0.3),
+  landing-glow-4: rgba(120, 40, 34, 0.34),
+  landing-glow-5: rgba(88, 24, 40, 0.3),
+  landing-glow-6: rgba(70, 16, 30, 0.26)
+);
+
+// Violet theme sections.
+$violet-core: (
+  bg: #000,
+  fg: #f5f5f5,
+  muted: rgba(255, 255, 255, 0.7),
+  muted-strong: rgba(255, 255, 255, 0.55),
+  border: rgba(255, 255, 255, 0.2),
+  border-strong: rgba(255, 255, 255, 0.5),
+  glow: rgba(123, 183, 255, 0.18),
+  accent: #7bb7ff,
+  accent-contrast: #050505,
+  surface-1: #050505,
+  surface-2: #080808,
+  surface-3: #0a0a0a,
+  surface-4: #111111,
+  surface-5: #131313,
+  bg-elev-1: #050505,
+  scrollbar-track-color: #000
+);
+
+$violet-engine: (
+  engine-native: #f4da7a,
+  engine-ffmpeg: #78c4ff
+);
+
+$violet-overlays: $overlay-tokens-dark;
+$violet-buttons: $button-tokens-dark;
+$violet-preview: $preview-tokens-dark;
+$violet-controls: $range-thumb-dark;
+
+$violet-landing: (
+  landing-glow-1: rgba(24, 52, 90, 0.38),
+  landing-glow-2: rgba(18, 40, 72, 0.32),
+  landing-glow-3: rgba(22, 46, 82, 0.3),
+  landing-glow-4: rgba(30, 66, 120, 0.34),
+  landing-glow-5: rgba(18, 48, 92, 0.3),
+  landing-glow-6: rgba(12, 34, 70, 0.26)
+);
+
+// Snow theme sections.
+$snow-core: (
+  bg: #f5f5f4,
+  fg: #0f0f0f,
+  muted: rgba(0, 0, 0, 0.62),
+  muted-strong: rgba(0, 0, 0, 0.82),
+  caps-weight: 600,
+  border: rgba(0, 0, 0, 0.12),
+  border-strong: rgba(0, 0, 0, 0.28),
+  glow: rgba(0, 0, 0, 0.08),
+  accent: #2b7fff,
+  accent-contrast: #0a0a0a,
+  // Keep accent fills light so dark text stays readable on the snow theme.
+  accent-bg: rgba(43, 127, 255, 0.18),
+  surface-1: #ffffff,
+  surface-2: #f2f2f2,
+  surface-3: #ededed,
+  surface-4: #e6e6e6,
+  surface-5: #dddddd,
+  bg-elev-1: #ffffff,
+  scrollbar-track-color: #e6e6e6
+);
+
+// Light themes can also set engine-bg-base to keep engine tags bright on pale surfaces.
+$snow-engine: (
+  // Lighten engine tag fills for snow (mix with white instead of black).
+  engine-bg-base: #ffffff,
+  engine-native: #d9821e,
+  engine-ffmpeg: #2f6cff,
+  // Boost the native tag contrast for the light theme.
+  engine-native-strong: #b45c00,
+  engine-native-border: rgba(180, 92, 0, 0.55),
+  engine-native-bg: rgba(255, 160, 45, 0.22)
+);
+
+$snow-overlays: $overlay-tokens-light;
+$snow-buttons: $button-tokens-light;
+$snow-preview: $preview-tokens-light;
+$snow-controls: $range-thumb-light;
+
+$snow-landing: (
+  landing-glow-1: rgba(150, 200, 255, 0.45),
+  landing-glow-2: rgba(120, 180, 255, 0.35),
+  landing-glow-3: rgba(160, 210, 255, 0.3),
+  landing-glow-4: rgba(230, 200, 255, 0.32),
+  landing-glow-5: rgba(210, 190, 255, 0.28),
+  landing-glow-6: rgba(190, 210, 255, 0.26)
+);
+
 $themes: (
-  "midnight": (
-    bg: #000,
-    fg: #f5f5f5,
-    muted: rgba(255, 255, 255, 0.7),
-    muted-strong: rgba(255, 255, 255, 0.55),
-    border: rgba(255, 255, 255, 0.2),
-    border-strong: rgba(255, 255, 255, 0.5),
-    glow: rgba(255, 255, 255, 0.16),
-    accent: #7bffa8,
-    accent-contrast: #050505,
-    engine-native: #ffdd96,
-    engine-ffmpeg: #c4d4ff,
-    surface-1: #050505,
-    surface-2: #080808,
-    surface-3: #0a0a0a,
-    surface-4: #111111,
-    surface-5: #131313,
-    bg-elev-1: #050505,
-    // Glass/overlay tokens keep UI panels consistent across themes.
-    badge-bg: rgba(0, 0, 0, 0.6),
-    overlay-panel-bg: rgba(0, 0, 0, 0.6),
-    panel-bg: rgba(0, 0, 0, 0.35),
-    panel-bg-soft: rgba(0, 0, 0, 0.3),
-    panel-item-bg: rgba(0, 0, 0, 0.4),
-    panel-item-hover-bg: rgba(255, 255, 255, 0.04),
-    tag-bg: rgba(0, 0, 0, 0.45),
-    chip-bg: rgba(0, 0, 0, 0.4),
-    chip-border: rgba(255, 255, 255, 0.12),
-    panel-divider: rgba(255, 255, 255, 0.12),
-    button-bg-soft: rgba(0, 0, 0, 0.35),
-    button-bg-medium: rgba(0, 0, 0, 0.45),
-    button-bg-strong: rgba(0, 0, 0, 0.55),
-    overlay-button-bg: rgba(0, 0, 0, 0.55),
-    overlay-button-color: #f5f5f5,
-    overlay-button-border: rgba(255, 255, 255, 0.3),
-    overlay-button-active-color: #aaf5c3,
-    control-bg-muted: rgba(0, 0, 0, 0.5),
-    select-option-hover-bg: rgba(255, 255, 255, 0.06),
-    select-divider: rgba(255, 255, 255, 0.06),
-    focus-ring: rgba(255, 255, 255, 0.08),
-    scrollbar-track-color: #000,
-    pill-bg-default: rgba(0, 0, 0, 0.35),
-    pill-bg-strong: rgba(0, 0, 0, 0.5),
-    toast-bg: rgba(10, 10, 10, 0.82),
-    preview-surface-glow: rgba(30, 30, 30, 0.25),
-    preview-surface-base: #030303,
-    preview-frame-bg: #000,
-    preview-overlay-bg: rgba(0, 0, 0, 0.45),
-    scrim-strong: rgba(0, 0, 0, 0.86),
-    scrim-soft: rgba(0, 0, 0, 0.78),
-    scrim-strong-blur: rgba(0, 0, 0, 0.8),
-    scrim-soft-blur: rgba(0, 0, 0, 0.7),
-    drag-overlay-bg: rgba(0, 0, 0, 0.72),
-    drag-overlay-bg-blur: rgba(0, 0, 0, 0.55),
-    range-thumb-shadow: 0 0 6px rgba(0, 0, 0, 0.6),
-    landing-glow-1: rgba(18, 70, 52, 0.4),
-    landing-glow-2: rgba(12, 50, 38, 0.34),
-    landing-glow-3: rgba(16, 60, 44, 0.3),
-    landing-glow-4: rgba(50, 24, 90, 0.36),
-    landing-glow-5: rgba(36, 16, 70, 0.3),
-    landing-glow-6: rgba(30, 12, 60, 0.28),
-    shadows: (
-      card: 0 10px 24px rgba(0, 0, 0, 0.28),
-      modal: 0 20px 60px rgba(0, 0, 0, 0.6),
-      lift: 0 24px 70px rgba(0, 0, 0, 0.6),
-      menu: 0 18px 40px rgba(0, 0, 0, 0.6),
-      overlay: 0 0 24px rgba(0, 0, 0, 0.4)
-    ),
-    status: (
-      success: #aaf5c3,
-      error: #ff9292,
-      warning: #ffdd96,
-      info: #c4d4ff
-    )
+  "midnight": merge-maps(
+    $midnight-core,
+    $midnight-engine,
+    $midnight-overlays,
+    $midnight-buttons,
+    $midnight-preview,
+    $midnight-controls,
+    $midnight-landing,
+    (shadows: $shadow-tokens-dark),
+    (status: $status-tokens-dark)
   ),
-  "ember": (
-    bg: #000,
-    fg: #f5f5f5,
-    muted: rgba(255, 255, 255, 0.7),
-    muted-strong: rgba(255, 255, 255, 0.55),
-    border: rgba(255, 255, 255, 0.2),
-    border-strong: rgba(255, 255, 255, 0.5),
-    glow: rgba(255, 132, 118, 0.18),
-    accent: #ff8476,
-    accent-contrast: #050505,
-    engine-native: #ffc08a,
-    engine-ffmpeg: #b8d0ff,
-    surface-1: #050505,
-    surface-2: #080808,
-    surface-3: #0a0a0a,
-    surface-4: #111111,
-    surface-5: #131313,
-    bg-elev-1: #050505,
-    // Glass/overlay tokens keep UI panels consistent across themes.
-    badge-bg: rgba(0, 0, 0, 0.6),
-    overlay-panel-bg: rgba(0, 0, 0, 0.6),
-    panel-bg: rgba(0, 0, 0, 0.35),
-    panel-bg-soft: rgba(0, 0, 0, 0.3),
-    panel-item-bg: rgba(0, 0, 0, 0.4),
-    panel-item-hover-bg: rgba(255, 255, 255, 0.04),
-    tag-bg: rgba(0, 0, 0, 0.45),
-    chip-bg: rgba(0, 0, 0, 0.4),
-    chip-border: rgba(255, 255, 255, 0.12),
-    panel-divider: rgba(255, 255, 255, 0.12),
-    button-bg-soft: rgba(0, 0, 0, 0.35),
-    button-bg-medium: rgba(0, 0, 0, 0.45),
-    button-bg-strong: rgba(0, 0, 0, 0.55),
-    overlay-button-bg: rgba(0, 0, 0, 0.55),
-    overlay-button-color: #f5f5f5,
-    overlay-button-border: rgba(255, 255, 255, 0.3),
-    overlay-button-active-color: #aaf5c3,
-    control-bg-muted: rgba(0, 0, 0, 0.5),
-    select-option-hover-bg: rgba(255, 255, 255, 0.06),
-    select-divider: rgba(255, 255, 255, 0.06),
-    focus-ring: rgba(255, 255, 255, 0.08),
-    scrollbar-track-color: #000,
-    pill-bg-default: rgba(0, 0, 0, 0.35),
-    pill-bg-strong: rgba(0, 0, 0, 0.5),
-    toast-bg: rgba(10, 10, 10, 0.82),
-    preview-surface-glow: rgba(30, 30, 30, 0.25),
-    preview-surface-base: #030303,
-    preview-frame-bg: #000,
-    preview-overlay-bg: rgba(0, 0, 0, 0.45),
-    scrim-strong: rgba(0, 0, 0, 0.86),
-    scrim-soft: rgba(0, 0, 0, 0.78),
-    scrim-strong-blur: rgba(0, 0, 0, 0.8),
-    scrim-soft-blur: rgba(0, 0, 0, 0.7),
-    drag-overlay-bg: rgba(0, 0, 0, 0.72),
-    drag-overlay-bg-blur: rgba(0, 0, 0, 0.55),
-    range-thumb-shadow: 0 0 6px rgba(0, 0, 0, 0.6),
-    landing-glow-1: rgba(90, 32, 26, 0.42),
-    landing-glow-2: rgba(70, 22, 18, 0.34),
-    landing-glow-3: rgba(98, 38, 30, 0.3),
-    landing-glow-4: rgba(120, 40, 34, 0.34),
-    landing-glow-5: rgba(88, 24, 40, 0.3),
-    landing-glow-6: rgba(70, 16, 30, 0.26),
-    shadows: (
-      card: 0 10px 24px rgba(0, 0, 0, 0.28),
-      modal: 0 20px 60px rgba(0, 0, 0, 0.6),
-      lift: 0 24px 70px rgba(0, 0, 0, 0.6),
-      menu: 0 18px 40px rgba(0, 0, 0, 0.6),
-      overlay: 0 0 24px rgba(0, 0, 0, 0.4)
-    ),
-    status: (
-      success: #aaf5c3,
-      error: #ff9292,
-      warning: #ffdd96,
-      info: #c4d4ff
-    )
+  "ember": merge-maps(
+    $ember-core,
+    $ember-engine,
+    $ember-overlays,
+    $ember-buttons,
+    $ember-preview,
+    $ember-controls,
+    $ember-landing,
+    (shadows: $shadow-tokens-dark),
+    (status: $status-tokens-dark)
   ),
-  "violet": (
-    bg: #000,
-    fg: #f5f5f5,
-    muted: rgba(255, 255, 255, 0.7),
-    muted-strong: rgba(255, 255, 255, 0.55),
-    border: rgba(255, 255, 255, 0.2),
-    border-strong: rgba(255, 255, 255, 0.5),
-    glow: rgba(123, 183, 255, 0.18),
-    accent: #7bb7ff,
-    accent-contrast: #050505,
-    engine-native: #f4da7a,
-    engine-ffmpeg: #78c4ff,
-    surface-1: #050505,
-    surface-2: #080808,
-    surface-3: #0a0a0a,
-    surface-4: #111111,
-    surface-5: #131313,
-    bg-elev-1: #050505,
-    // Glass/overlay tokens keep UI panels consistent across themes.
-    badge-bg: rgba(0, 0, 0, 0.6),
-    overlay-panel-bg: rgba(0, 0, 0, 0.6),
-    panel-bg: rgba(0, 0, 0, 0.35),
-    panel-bg-soft: rgba(0, 0, 0, 0.3),
-    panel-item-bg: rgba(0, 0, 0, 0.4),
-    panel-item-hover-bg: rgba(255, 255, 255, 0.04),
-    tag-bg: rgba(0, 0, 0, 0.45),
-    chip-bg: rgba(0, 0, 0, 0.4),
-    chip-border: rgba(255, 255, 255, 0.12),
-    panel-divider: rgba(255, 255, 255, 0.12),
-    button-bg-soft: rgba(0, 0, 0, 0.35),
-    button-bg-medium: rgba(0, 0, 0, 0.45),
-    button-bg-strong: rgba(0, 0, 0, 0.55),
-    overlay-button-bg: rgba(0, 0, 0, 0.55),
-    overlay-button-color: #f5f5f5,
-    overlay-button-border: rgba(255, 255, 255, 0.3),
-    overlay-button-active-color: #aaf5c3,
-    control-bg-muted: rgba(0, 0, 0, 0.5),
-    select-option-hover-bg: rgba(255, 255, 255, 0.06),
-    select-divider: rgba(255, 255, 255, 0.06),
-    focus-ring: rgba(255, 255, 255, 0.08),
-    scrollbar-track-color: #000,
-    pill-bg-default: rgba(0, 0, 0, 0.35),
-    pill-bg-strong: rgba(0, 0, 0, 0.5),
-    toast-bg: rgba(10, 10, 10, 0.82),
-    preview-surface-glow: rgba(30, 30, 30, 0.25),
-    preview-surface-base: #030303,
-    preview-frame-bg: #000,
-    preview-overlay-bg: rgba(0, 0, 0, 0.45),
-    scrim-strong: rgba(0, 0, 0, 0.86),
-    scrim-soft: rgba(0, 0, 0, 0.78),
-    scrim-strong-blur: rgba(0, 0, 0, 0.8),
-    scrim-soft-blur: rgba(0, 0, 0, 0.7),
-    drag-overlay-bg: rgba(0, 0, 0, 0.72),
-    drag-overlay-bg-blur: rgba(0, 0, 0, 0.55),
-    range-thumb-shadow: 0 0 6px rgba(0, 0, 0, 0.6),
-    landing-glow-1: rgba(24, 52, 90, 0.38),
-    landing-glow-2: rgba(18, 40, 72, 0.32),
-    landing-glow-3: rgba(22, 46, 82, 0.3),
-    landing-glow-4: rgba(30, 66, 120, 0.34),
-    landing-glow-5: rgba(18, 48, 92, 0.3),
-    landing-glow-6: rgba(12, 34, 70, 0.26),
-    shadows: (
-      card: 0 10px 24px rgba(0, 0, 0, 0.28),
-      modal: 0 20px 60px rgba(0, 0, 0, 0.6),
-      lift: 0 24px 70px rgba(0, 0, 0, 0.6),
-      menu: 0 18px 40px rgba(0, 0, 0, 0.6),
-      overlay: 0 0 24px rgba(0, 0, 0, 0.4)
-    ),
-    status: (
-      success: #aaf5c3,
-      error: #ff9292,
-      warning: #ffdd96,
-      info: #c4d4ff
-    )
+  "violet": merge-maps(
+    $violet-core,
+    $violet-engine,
+    $violet-overlays,
+    $violet-buttons,
+    $violet-preview,
+    $violet-controls,
+    $violet-landing,
+    (shadows: $shadow-tokens-dark),
+    (status: $status-tokens-dark)
   ),
-  "snow": (
-    bg: #f5f5f4,
-    fg: #0f0f0f,
-    muted: rgba(0, 0, 0, 0.62),
-    muted-strong: rgba(0, 0, 0, 0.82),
-    caps-weight: 600,
-    border: rgba(0, 0, 0, 0.12),
-    border-strong: rgba(0, 0, 0, 0.28),
-    glow: rgba(0, 0, 0, 0.08),
-    accent: #2b7fff,
-    accent-contrast: #0a0a0a,
-    // Keep accent fills light so dark text stays readable on the snow theme.
-    accent-bg: rgba(43, 127, 255, 0.18),
-    // Lighten engine tag fills for snow (mix with white instead of black).
-    engine-bg-base: #ffffff,
-    engine-native: #d9821e,
-    engine-ffmpeg: #2f6cff,
-    // Boost the native tag contrast for the light theme.
-    engine-native-strong: #b45c00,
-    engine-native-border: rgba(180, 92, 0, 0.55),
-    engine-native-bg: rgba(255, 160, 45, 0.22),
-    surface-1: #ffffff,
-    surface-2: #f2f2f2,
-    surface-3: #ededed,
-    surface-4: #e6e6e6,
-    surface-5: #dddddd,
-    bg-elev-1: #ffffff,
-    // Glass/overlay tokens tuned for the light theme.
-    badge-bg: rgba(0, 0, 0, 0.08),
-    overlay-panel-bg: rgba(255, 255, 255, 0.9),
-    panel-bg: rgba(0, 0, 0, 0.04),
-    panel-bg-soft: rgba(0, 0, 0, 0.03),
-    panel-item-bg: rgba(0, 0, 0, 0.06),
-    panel-item-hover-bg: rgba(0, 0, 0, 0.05),
-    tag-bg: rgba(0, 0, 0, 0.08),
-    chip-bg: rgba(0, 0, 0, 0.06),
-    chip-border: rgba(0, 0, 0, 0.12),
-    panel-divider: rgba(0, 0, 0, 0.08),
-    button-bg-soft: rgba(0, 0, 0, 0.06),
-    button-bg-medium: rgba(0, 0, 0, 0.1),
-    button-bg-strong: rgba(0, 0, 0, 0.14),
-    overlay-button-bg: rgba(0, 0, 0, 0.7),
-    overlay-button-color: #ffffff,
-    overlay-button-border: rgba(255, 255, 255, 0.65),
-    overlay-button-active-color: #ffffff,
-    preview-button-bg: rgba(0, 0, 0, 0.14),
-    preview-button-ghost-bg: rgba(0, 0, 0, 0.1),
-    control-bg-muted: rgba(0, 0, 0, 0.08),
-    select-option-hover-bg: rgba(0, 0, 0, 0.05),
-    select-divider: rgba(0, 0, 0, 0.08),
-    focus-ring: rgba(0, 0, 0, 0.16),
-    scrollbar-track-color: #e6e6e6,
-    pill-bg-default: rgba(0, 0, 0, 0.06),
-    pill-bg-strong: rgba(0, 0, 0, 0.1),
-    toast-bg: rgba(255, 255, 255, 0.9),
-    preview-surface-glow: rgba(0, 0, 0, 0.06),
-    preview-surface-base: #f1f1f1,
-    preview-frame-bg: #000,
-    preview-overlay-bg: rgba(255, 255, 255, 0.8),
-    scrim-strong: rgba(0, 0, 0, 0.4),
-    scrim-soft: rgba(0, 0, 0, 0.3),
-    scrim-strong-blur: rgba(0, 0, 0, 0.32),
-    scrim-soft-blur: rgba(0, 0, 0, 0.24),
-    drag-overlay-bg: rgba(0, 0, 0, 0.35),
-    drag-overlay-bg-blur: rgba(0, 0, 0, 0.25),
-    range-thumb-shadow: 0 0 6px rgba(0, 0, 0, 0.2),
-    landing-glow-1: rgba(150, 200, 255, 0.45),
-    landing-glow-2: rgba(120, 180, 255, 0.35),
-    landing-glow-3: rgba(160, 210, 255, 0.3),
-    landing-glow-4: rgba(230, 200, 255, 0.32),
-    landing-glow-5: rgba(210, 190, 255, 0.28),
-    landing-glow-6: rgba(190, 210, 255, 0.26),
-    shadows: (
-      card: 0 10px 24px rgba(0, 0, 0, 0.12),
-      modal: 0 20px 60px rgba(0, 0, 0, 0.2),
-      lift: 0 24px 70px rgba(0, 0, 0, 0.18),
-      menu: 0 18px 40px rgba(0, 0, 0, 0.18),
-      overlay: 0 0 24px rgba(0, 0, 0, 0.12)
-    ),
-    status: (
-      success: #3aa86b,
-      error: #d95c5c,
-      warning: #c9872d,
-      info: #2f6cff
-    )
+  "snow": merge-maps(
+    $snow-core,
+    $snow-engine,
+    $snow-overlays,
+    $snow-buttons,
+    $snow-preview,
+    $snow-controls,
+    $snow-landing,
+    (shadows: $shadow-tokens-light),
+    (status: $status-tokens-light)
   )
 );
 
@@ -391,3 +434,4 @@ $themes: (
     }
   }
 }
+

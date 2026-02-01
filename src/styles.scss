@@ -7,8 +7,11 @@
 @forward "./styles/landing";
 @forward "./styles/editor.modal";
 @forward "./styles/editor.export";
-@forward "./styles/editor.mode";
-@forward "./styles/editor.layout";
+@forward "./styles/mode.modal";
+@forward "./styles/mode.controls";
+@forward "./styles/editor.cards";
+@forward "./styles/editor.preview";
+@forward "./styles/editor.toast";
 
 // Use explicit namespaces to avoid collisions between editor.* modules.
 @use "./styles/base";
@@ -17,5 +20,8 @@
 @use "./styles/landing";
 @use "./styles/editor.modal" as editorModal;
 @use "./styles/editor.export" as editorExport;
-@use "./styles/editor.mode" as editorMode;
-@use "./styles/editor.layout" as editorLayout;
+@use "./styles/mode.modal" as modeModal;
+@use "./styles/mode.controls" as modeControls;
+@use "./styles/editor.cards" as editorCards;
+@use "./styles/editor.preview" as editorPreview;
+@use "./styles/editor.toast" as editorToast;

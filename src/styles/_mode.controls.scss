@@ -1,0 +1,82 @@
+@use "./controls" as controls;
+
+// Mode controls in the editor rail and dropdown trigger styles.
+
+// Secondary mode browser trigger under the dropdown.
+.mode-select-button {
+  --button-padding: 8px 10px;
+  --button-font-size: 0.75rem;
+  --button-letter-spacing: 0.02em;
+  --button-text-transform: none;
+  --button-bg: var(--button-bg-medium);
+
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  white-space: nowrap;
+}
+
+.mode-select-button[aria-expanded="true"] {
+  border-color: var(--accent-border);
+  box-shadow: 0 0 0 1px var(--accent-strong);
+}
+
+.mode-select-button__label {
+  --caps-font-size: 0.6rem;
+  --caps-letter-spacing: 0.18em;
+  --caps-color: var(--muted-strong);
+
+  @include controls.caps-label;
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+
+.mode-select-button__hint {
+  margin-left: auto;
+  --caps-font-size: 0.65rem;
+  --caps-letter-spacing: 0.14em;
+  --caps-color: var(--muted);
+
+  @include controls.caps-label;
+  white-space: nowrap;
+}
+
+// Mode controls inside the editor rail.
+.mode-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.mode-control {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.mode-control-label {
+  --caps-font-size: 0.65rem;
+  --caps-letter-spacing: 0.18em;
+  --caps-color: var(--muted-strong);
+
+  @include controls.caps-label;
+}
+
+.mode-control-value {
+  font-size: 0.75rem;
+  color: var(--muted-strong);
+  font-variant-numeric: tabular-nums;
+}
+
+.mode-input {
+  --control-padding: 6px 8px;
+  --control-font-size: 0.8rem;
+  width: 100%;
+}
+
+.mode-input:disabled {
+  opacity: 0.5;
+}

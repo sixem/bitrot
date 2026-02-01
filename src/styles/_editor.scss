@@ -1,7 +1,10 @@
 // Editor layer entrypoint.
-// Split into focused partials for layout, modals, export, and modes.
+// Split into focused partials for layout, preview, toasts, and mode UI.
 
 @forward "./editor.modal";
 @forward "./editor.export";
-@forward "./editor.mode";
-@forward "./editor.layout";
+@forward "./mode.modal";
+@forward "./mode.controls";
+@forward "./editor.cards";
+@forward "./editor.preview";
+@forward "./editor.toast";

@@ -1,0 +1,50 @@
+@use "./surfaces" as surfaces;
+
+// Toast stack and message styling for editor feedback.
+
+.toast-stack {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  z-index: 40;
+  pointer-events: none;
+}
+
+.toast {
+  --surface-bg: var(--toast-bg);
+  --surface-border: 1px solid var(--border);
+  --surface-radius: var(--radius-md);
+
+  @include surfaces.surface;
+  min-width: 220px;
+  max-width: 420px;
+  width: min(420px, 92vw);
+  padding: 10px 14px;
+  color: var(--fg);
+  font-size: 0.9rem;
+  line-height: 1.4;
+  // Keep toasts single-line with ellipsis, while letting the height breathe.
+  white-space: nowrap;
+  overflow-x: hidden;
+  overflow-y: visible;
+  text-overflow: ellipsis;
+  pointer-events: none;
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+}
+
+.toast--success {
+  --surface-border: 1px solid var(--tone-success-border);
+}
+
+.toast--error {
+  --surface-border: 1px solid var(--tone-error-border);
+}
+
+.toast--info {
+  --surface-border: 1px solid var(--accent-border);
+  --surface-bg: var(--accent-bg);
+}

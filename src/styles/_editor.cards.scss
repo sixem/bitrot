@@ -1,0 +1,402 @@
+@use "./surfaces" as surfaces;
+@use "./controls" as controls;
+@use "./editor.tokens" as editorTokens;
+
+// Editor shell, layout grid, and reusable cards.
+
+// Editor layout: preview first, details below for calmer scanning.
+.editor-shell {
+  position: relative;
+  width: min(1320px, 100%);
+  margin: 0 auto;
+  padding: 15px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+
+  &[data-dragging="true"] {
+    .editor-layout,
+    .editor-header,
+    .editor-info {
+      opacity: 0.45;
+      transform: scale(0.99);
+    }
+  }
+}
+
+.editor-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 24px;
+  transition: opacity 140ms ease, transform 140ms ease;
+}
+
+.editor-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.editor-heading .editor-eyebrow {
+  margin: 0;
+}
+
+.editor-back {
+  --button-padding: 0;
+  --button-border: 0;
+  --button-bg: transparent;
+  --button-font-size: 0.75rem;
+  --button-letter-spacing: 0.12em;
+  --button-text-transform: none;
+  --button-color: var(--muted-strong);
+
+  line-height: 1;
+  transition: color 0.12s ease;
+}
+
+.editor-back:hover {
+  color: var(--fg);
+}
+
+.editor-left {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+  grid-column: 1;
+}
+
+.editor-header > div {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.editor-eyebrow {
+  --caps-font-size: 0.7rem;
+  --caps-letter-spacing: 0.3em;
+  --caps-color: var(--muted-strong);
+
+  margin: 0 0 6px;
+  @include controls.caps-label;
+}
+
+.editor-title {
+  margin: 0;
+  font-size: clamp(1.6rem, 2.6vw, 2.3rem);
+  font-family: var(--title-font);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.editor-actions {
+  display: flex;
+  gap: 12px;
+}
+
+.editor-button {
+  --button-padding: 7px 14px;
+  --button-disabled-opacity: 0.45;
+  width: 100%;
+}
+
+// Main editor split: preview + processing on top, info across full width.
+.editor-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 320px);
+  grid-template-rows: minmax(0, var(--editor-top-row-height, auto)) auto;
+  gap: 20px;
+  align-items: stretch;
+  align-content: start;
+  flex: 1 1 auto;
+  min-height: 0;
+  transition: opacity 140ms ease, transform 140ms ease;
+}
+
+.editor-left,
+.editor-rail {
+  grid-row: 1;
+}
+
+.editor-left .editor-preview-card {
+  flex: 1 1 auto;
+}
+
+.editor-layout > * {
+  min-height: 0;
+}
+
+.editor-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  align-self: start;
+}
+
+.editor-processing-card,
+.editor-mode-card {
+  min-height: 0;
+}
+
+.editor-info {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px;
+  grid-column: 1 / -1;
+  transition: opacity 140ms ease, transform 140ms ease;
+}
+
+.editor-card {
+  --surface-bg: var(--surface-1);
+  --surface-border: 1px solid var(--border);
+  --surface-radius: var(--radius-lg);
+  --surface-shadow: var(--shadow-card);
+
+  @include surfaces.surface;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.editor-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.editor-card-header--mode {
+  align-items: flex-start;
+}
+
+.editor-card-header-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.editor-card-header-right {
+  flex: 0 0 auto;
+  max-width: 55%;
+}
+
+.editor-card-mode-name {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--accent-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: right;
+}
+
+.editor-card-tags {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.editor-card-title {
+  --caps-font-size: 0.65rem;
+  --caps-letter-spacing: 0.2em;
+  --caps-color: var(--muted-strong);
+
+  margin: 0;
+  @include controls.caps-label;
+}
+
+.editor-card-tag[data-tone="ffmpeg"] {
+  color: var(--engine-ffmpeg-strong);
+  border-color: var(--engine-ffmpeg-border);
+  background: var(--engine-ffmpeg-bg);
+}
+
+.editor-card-tag[data-tone="native"] {
+  color: var(--engine-native-strong);
+  border-color: var(--engine-native-border);
+  background: var(--engine-native-bg);
+}
+
+.editor-pill {
+  --pill-color: var(--muted-strong);
+  --pill-bg: var(--pill-bg-strong);
+}
+
+.editor-pill[data-tone="ready"] {
+  color: var(--tone-success-strong);
+  border-color: var(--tone-success-border);
+}
+
+.editor-pill[data-tone="loading"],
+.editor-pill[data-tone="running"] {
+  color: var(--tone-info);
+  border-color: var(--tone-info-border);
+}
+
+.editor-pill[data-tone="success"] {
+  color: var(--tone-success-strong);
+  border-color: var(--tone-success-border);
+}
+
+.editor-pill[data-tone="canceled"] {
+  color: var(--tone-warning);
+  border-color: var(--tone-warning-border);
+}
+
+.editor-pill[data-tone="error"] {
+  color: var(--tone-error);
+  border-color: var(--tone-error-border);
+}
+
+.editor-kv {
+  display: grid;
+  gap: 10px;
+}
+
+.editor-kv--dense {
+  gap: 8px;
+}
+
+.editor-kv-row {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+}
+
+// Full-width row variant for single-control lines (no left label).
+.editor-kv-row--full {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.editor-kv-label {
+  --caps-font-size: 0.65rem;
+  --caps-letter-spacing: 0.18em;
+  --caps-color: var(--muted-strong);
+
+  @include controls.caps-label;
+}
+
+.editor-kv-value {
+  font-size: 0.9rem;
+  color: var(--fg);
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.editor-kv-value--action {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  width: 100%;
+  cursor: pointer;
+  user-select: text;
+  transition: color 0.12s ease, text-shadow 0.12s ease;
+}
+
+.editor-kv-value--action:hover {
+  color: var(--accent-ink);
+  text-decoration: underline;
+}
+
+.editor-kv-value--action:disabled {
+  cursor: default;
+  opacity: 0.6;
+  text-decoration: none;
+}
+
+.editor-card-error {
+  margin: 0;
+  color: var(--tone-error);
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+
+.editor-select {
+  --control-padding: 6px 10px;
+  width: 100%;
+}
+
+.editor-select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.editor-help {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.4;
+}
+
+.processing-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.editor-button--primary {
+  border-color: var(--accent-border);
+  background: var(--accent-bg);
+  --button-hover-border: var(--accent);
+}
+
+.job-progress {
+  width: 100%;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--surface-4);
+  overflow: hidden;
+}
+
+.job-progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg, var(--tone-success), var(--tone-success-soft));
+  transition: width 120ms linear;
+}
+
+// Compact editor layout for narrow windows.
+@media (max-width: editorTokens.$editor-compact-breakpoint) {
+  .editor-shell {
+    padding: 40px 20px 56px;
+  }
+
+  .editor-header {
+    flex-direction: row;
+    align-items: flex-end;
+    gap: 16px;
+  }
+
+  .editor-actions {
+    flex-wrap: nowrap;
+  }
+
+  .editor-title {
+    max-width: 100%;
+  }
+}
+
+// Respect reduced-motion by avoiding scale transitions during drag.
+@media (prefers-reduced-motion: reduce) {
+  .editor-header,
+  .editor-layout,
+  .editor-info {
+    transition: none;
+  }
+
+  .editor-shell[data-dragging="true"] {
+    .editor-layout,
+    .editor-header,
+    .editor-info {
+      transform: none;
+    }
+  }
+}
