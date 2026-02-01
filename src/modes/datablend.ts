@@ -1,3 +1,5 @@
+import type { ModeConfigField } from "@/modes/configFields";
+
 // Data-blend filter chain for glitchy temporal blending.
 export type DatablendBlendMode = "difference" | "screen" | "multiply" | "overlay";
 
@@ -12,6 +14,40 @@ export const defaultDatablendConfig: DatablendConfig = {
   trail: 25,
   blendMode: "overlay"
 };
+
+// Mode browser config metadata for datablend defaults.
+export const datablendConfigFields: ModeConfigField<DatablendConfig>[] = [
+  {
+    key: "intensity",
+    label: "Intensity",
+    kind: "range",
+    min: 0,
+    max: 100,
+    unit: "%",
+    description: "Overall strength of the blended frame stack."
+  },
+  {
+    key: "trail",
+    label: "Trail",
+    kind: "range",
+    min: 0,
+    max: 100,
+    unit: "%",
+    description: "How long ghost trails persist between frames."
+  },
+  {
+    key: "blendMode",
+    label: "Blend mode",
+    kind: "select",
+    options: [
+      { value: "difference", label: "Difference" },
+      { value: "screen", label: "Screen" },
+      { value: "multiply", label: "Multiply" },
+      { value: "overlay", label: "Overlay" }
+    ],
+    description: "How the temporal frames mix together."
+  }
+];
 
 const clamp = (value: number, min: number, max: number) =>
   Math.min(Math.max(value, min), max);

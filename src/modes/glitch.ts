@@ -1,3 +1,5 @@
+import type { ModeConfigField } from "@/modes/configFields";
+
 // Configurable glitch filter chain for stronger digital artifacts.
 export type GlitchConfig = {
   intensity: number;
@@ -10,6 +12,36 @@ export const defaultGlitchConfig: GlitchConfig = {
   chromaShift: 4,
   noise: 18
 };
+
+// Mode browser config metadata for glitch defaults.
+export const glitchConfigFields: ModeConfigField<GlitchConfig>[] = [
+  {
+    key: "intensity",
+    label: "Intensity",
+    kind: "range",
+    min: 0,
+    max: 100,
+    unit: "%",
+    description: "Overall strength of the digital damage."
+  },
+  {
+    key: "chromaShift",
+    label: "Chroma shift",
+    kind: "range",
+    min: 0,
+    max: 8,
+    unit: "px",
+    description: "Color channel split distance."
+  },
+  {
+    key: "noise",
+    label: "Noise",
+    kind: "range",
+    min: 0,
+    max: 40,
+    description: "Adds speckled noise to the breakup."
+  }
+];
 
 const clamp = (value: number, min: number, max: number) =>
   Math.min(Math.max(value, min), max);

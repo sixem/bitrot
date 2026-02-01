@@ -1,3 +1,5 @@
+import type { ModeConfigField } from "@/modes/configFields";
+
 // VHS-style filter chain for analog tape artifacts.
 export type VhsConfig = {
   intensity: number;
@@ -14,6 +16,54 @@ export const defaultVhsConfig: VhsConfig = {
   noise: 14,
   smear: 10
 };
+
+// Mode browser config metadata for VHS defaults.
+export const vhsConfigFields: ModeConfigField<VhsConfig>[] = [
+  {
+    key: "intensity",
+    label: "Intensity",
+    kind: "range",
+    min: 0,
+    max: 100,
+    unit: "%",
+    description: "Overall mix of tape wear, color shift, and grit."
+  },
+  {
+    key: "tracking",
+    label: "Tracking",
+    kind: "range",
+    min: 0,
+    max: 100,
+    unit: "%",
+    description: "Adds horizontal wobble and scanline drift."
+  },
+  {
+    key: "chromaShift",
+    label: "Chroma bleed",
+    kind: "range",
+    min: 0,
+    max: 8,
+    unit: "px",
+    description: "Offsets color channels for classic VHS bleed."
+  },
+  {
+    key: "noise",
+    label: "Noise",
+    kind: "range",
+    min: 0,
+    max: 40,
+    description: "Static and grain strength layered over the frame."
+  },
+  {
+    key: "smear",
+    label: "Softness",
+    kind: "range",
+    min: 0,
+    max: 100,
+    unit: "%",
+    description: "Adds blur and softness to mimic tape blur."
+  }
+];
 
 const clamp = (value: number, min: number, max: number) =>
   Math.min(Math.max(value, min), max);

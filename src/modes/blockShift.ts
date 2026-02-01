@@ -1,3 +1,5 @@
+import type { ModeConfigField } from "@/modes/configFields";
+
 // Block shift configuration for native macroblock displacement.
 
 export type BlockShiftConfig = {
@@ -20,3 +22,53 @@ export const defaultBlockShiftConfig: BlockShiftConfig = {
   intensity: 80,
   seed: 1337
 };
+
+// Mode browser config metadata for block shift defaults.
+export const blockShiftConfigFields: ModeConfigField<BlockShiftConfig>[] = [
+  {
+    key: "intensity",
+    label: "Intensity",
+    kind: "range",
+    min: 0,
+    max: 100,
+    unit: "%",
+    description: "Blend between the original and shifted blocks."
+  },
+  {
+    key: "blockSize",
+    label: "Block size",
+    kind: "range",
+    min: 4,
+    max: 64,
+    step: 4,
+    unit: "px",
+    description: "Tile size used for displacement."
+  },
+  {
+    key: "maxOffset",
+    label: "Max offset",
+    kind: "range",
+    min: 0,
+    max: 64,
+    unit: "px",
+    description: "Maximum pixel shift per block."
+  },
+  {
+    key: "offsetStep",
+    label: "Offset step",
+    kind: "range",
+    min: 1,
+    max: 32,
+    unit: "px",
+    description: "Quantizes offsets to multiples of this value."
+  },
+  {
+    key: "seed",
+    label: "Seed",
+    kind: "number",
+    min: 0,
+    max: 9999,
+    step: 1,
+    description: "Repeatable random seed for the displacement pattern."
+  }
+];
