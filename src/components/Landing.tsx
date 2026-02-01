@@ -1,20 +1,23 @@
-import { useCallback } from "react";
+import { useCallback, type CSSProperties } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { APP_NAME, APP_TAGLINE, APP_VERSION } from "@/config/app";
 import DropZone from "@/components/DropZone";
 import useGlobalVideoDrop from "@/hooks/useGlobalVideoDrop";
 import { videoExtensions } from "@/domain/video";
+import { THEME_OPTIONS, type AppTheme } from "@/system/theme";
 import makeDebug from "@/utils/debug";
 
 // Primary landing screen shown in the desktop app.
 type LandingProps = {
   isReady: boolean;
   onVideoSelected: (path: string) => void;
+  theme: AppTheme;
+  onThemeChange: (theme: AppTheme) => void;
 };
 
 const debug = makeDebug("landing");
 
-const Landing = ({ isReady, onVideoSelected }: LandingProps) => {
+const Landing = ({ isReady, onVideoSelected, theme, onThemeChange }: LandingProps) => {
   const { isDragging, handleDropPaths } = useGlobalVideoDrop({
     isEnabled: isReady,
     onVideoSelected
@@ -63,8 +66,8 @@ const Landing = ({ isReady, onVideoSelected }: LandingProps) => {
             <p className="details-title">What happens next</p>
             <ul>
               <li>Pick a mode and configure it to your liking.</li>
-              <li>Trim the video if required, and set encoding presets.</li>
-              <li>Render the full video and get your result.</li>
+              <li>Trim the video if required, and set encoding options.</li>
+              <li>Render the video and get your result.</li>
             </ul>
           </div>
         </section>
@@ -77,6 +80,28 @@ const Landing = ({ isReady, onVideoSelected }: LandingProps) => {
         </div>
       </div>
 
+      <footer className="theme-toggle" role="radiogroup" aria-label="Theme">
+        {THEME_OPTIONS.map((option) => (
+          <button
+            key={option.id}
+            type="button"
+            className="theme-toggle__dot"
+            data-selected={option.id === theme}
+            role="radio"
+            aria-checked={option.id === theme}
+            aria-label={`${option.label} theme`}
+            onClick={() => onThemeChange(option.id)}
+            style={
+              {
+                "--theme-color": option.color,
+                "--theme-glow": option.glow
+              } as CSSProperties
+            }
+          >
+            <span className="theme-toggle__swatch" aria-hidden="true" />
+          </button>
+        ))}
+      </footer>
     </main>
   );
 };

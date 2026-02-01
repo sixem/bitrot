@@ -5,6 +5,7 @@ import { createVideoAssetFromPath, type VideoAsset } from "@/domain/video";
 import FfmpegGate from "@/components/FfmpegGate";
 import useFfmpegStatus from "@/system/useFfmpegStatus";
 import useAppCleanup from "@/system/useAppCleanup";
+import useThemePreference from "@/system/useThemePreference";
 import ModalProvider from "@/ui/modal/ModalProvider";
 import ShutdownModal from "@/ui/modal/ShutdownModal";
 import ToastProvider from "@/ui/toast/ToastProvider";
@@ -13,6 +14,7 @@ import ToastProvider from "@/ui/toast/ToastProvider";
 const App = () => {
   const { isClosing, message, forceClose } = useAppCleanup();
   const { status, refresh, isReady } = useFfmpegStatus();
+  const { theme, setTheme } = useThemePreference();
   const [asset, setAsset] = useState<VideoAsset | null>(null);
   const handleVideoSelected = useCallback((path: string) => {
     setAsset(createVideoAssetFromPath(path));
@@ -34,7 +36,12 @@ const App = () => {
             onBack={() => setAsset(null)}
           />
         ) : (
-          <Landing isReady={isReady} onVideoSelected={handleVideoSelected} />
+          <Landing
+            isReady={isReady}
+            onVideoSelected={handleVideoSelected}
+            theme={theme}
+            onThemeChange={setTheme}
+          />
         )}
         <FfmpegGate status={status} onRetry={refresh} />
         <ShutdownModal isOpen={isClosing} message={message} onForceClose={forceClose} />

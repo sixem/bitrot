@@ -119,7 +119,7 @@ const DropZone = ({
       <div className="dropzone-inner">
         <p className="dropzone-title">Drop a video to corrupt</p>
         <p className="dropzone-subtitle">
-          {isActive ? "Release to begin." : "MP4, MOV, MKV. etc."}
+          {isActive ? "Release to begin." : "mp4, mov, mkv, webm, avi"}
         </p>
       </div>
     </div>
