@@ -220,6 +220,16 @@ const Editor = ({ asset, onReplace, onBack }: EditorProps) => {
     }));
   };
 
+  const handleModeConfigUpdate = (
+    targetModeId: ModeId,
+    nextConfig: ModeConfigMap[ModeId]
+  ) => {
+    setModeConfigs((prev) => ({
+      ...prev,
+      [targetModeId]: nextConfig
+    }));
+  };
+
   const handleCancel = () => {
     cancel();
   };
@@ -268,7 +278,9 @@ const Editor = ({ asset, onReplace, onBack }: EditorProps) => {
             value={modeId}
             onChange={handleModeChange}
             config={modeConfigs[modeId]}
+            modeConfigs={modeConfigs}
             onConfigChange={handleModeConfigChange}
+            onModeConfigUpdate={handleModeConfigUpdate}
             disabled={job.status === "running"}
           />
           <EditorProcessingCard

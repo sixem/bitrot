@@ -39,11 +39,26 @@ const usePreviewKeyboard = ({
     const canNudgeFrames = hasFrameMap || !!frameDurationSeconds;
     const canPromptFrameMap = canRequestFrameMap;
 
+    const resolveFrameDelta = (key: string) => {
+      // Support comma/period frame stepping alongside arrow keys.
+      switch (key) {
+        case "ArrowRight":
+        case ".":
+          return 1;
+        case "ArrowLeft":
+        case ",":
+          return -1;
+        default:
+          return 0;
+      }
+    };
+
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented || controlsDisabled || !sourceUrl) {
         return;
       }
-      if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") {
+      const delta = resolveFrameDelta(event.key);
+      if (delta === 0) {
         return;
       }
       if (event.metaKey || event.ctrlKey) {
@@ -53,8 +68,8 @@ const usePreviewKeyboard = ({
         return;
       }
 
-      const delta = event.key === "ArrowRight" ? 1 : -1;
-      if (event.shiftKey && trim) {
+      const isArrowKey = event.key === "ArrowLeft" || event.key === "ArrowRight";
+      if (isArrowKey && event.shiftKey && trim) {
         event.preventDefault();
         if (!canNudgeFrames && canPromptFrameMap) {
           onRequestFrameMap();
@@ -63,7 +78,7 @@ const usePreviewKeyboard = ({
         nudgeTrimBoundary("start", delta);
         return;
       }
-      if (event.altKey && trim) {
+      if (isArrowKey && event.altKey && trim) {
         event.preventDefault();
         if (!canNudgeFrames && canPromptFrameMap) {
           onRequestFrameMap();
@@ -74,7 +89,7 @@ const usePreviewKeyboard = ({
       }
 
       event.preventDefault();
-      if (event.repeat) {
+      if (isArrowKey && event.repeat) {
         // Use OS repeat delay as the "hold" threshold for continuous playback.
         if (!holdActiveRef.current) {
           if (delta > 0 || canNudgeFrames) {
@@ -91,7 +106,7 @@ const usePreviewKeyboard = ({
         }
         return;
       }
-      if (!holdKeyRef.current) {
+      if (isArrowKey && !holdKeyRef.current) {
         holdKeyRef.current = event.key;
       }
       seekByFrames(delta);

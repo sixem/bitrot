@@ -23,7 +23,9 @@ type ModeCardProps = {
   value: ModeId;
   onChange: (value: ModeId) => void;
   config: ModeConfigMap[ModeId];
+  modeConfigs: ModeConfigMap;
   onConfigChange: (config: ModeConfigMap[ModeId]) => void;
+  onModeConfigUpdate: (modeId: ModeId, config: ModeConfigMap[ModeId]) => void;
   disabled?: boolean;
 };
 
@@ -37,7 +39,9 @@ const ModeCard = ({
   value,
   onChange,
   config,
+  modeConfigs,
   onConfigChange,
+  onModeConfigUpdate,
   disabled
 }: ModeCardProps) => {
   const activeMode = getModeDefinition(value);
@@ -46,12 +50,6 @@ const ModeCard = ({
     activeMode.engine === "native"
       ? { label: "Native", tone: "native" }
       : { label: "FFmpeg", tone: "ffmpeg" };
-
-  const handleModeSelect = (nextModeId: ModeId) => {
-    if (nextModeId !== value) {
-      onChange(nextModeId);
-    }
-  };
 
   const handleGlitchConfigChange = (patch: Partial<GlitchConfig>) => {
     onConfigChange({
@@ -226,7 +224,11 @@ const ModeCard = ({
       <ModeSelectModal
         isOpen={isModeModalOpen}
         activeModeId={value}
-        onSelect={handleModeSelect}
+        modeConfigs={modeConfigs}
+        onApply={(modeId, nextConfig) => {
+          onModeConfigUpdate(modeId, nextConfig);
+          onChange(modeId);
+        }}
         onClose={() => setIsModeModalOpen(false)}
       />
     </article>

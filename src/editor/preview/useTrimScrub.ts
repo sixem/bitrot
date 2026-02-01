@@ -83,8 +83,8 @@ const useTrimScrub = ({
         ? clampTime(trimSelection.end, durationSeconds)
         : undefined;
     const highlight = trimEnabled
-      ? "rgba(123, 255, 168, 0.45)"
-      : "rgba(120, 220, 255, 0.25)";
+      ? "var(--trim-highlight-active)"
+      : "var(--trim-highlight-idle)";
     if (start !== undefined && end !== undefined && end > start) {
       const startPct = (start / durationSeconds) * 100;
       const endPct = (end / durationSeconds) * 100;

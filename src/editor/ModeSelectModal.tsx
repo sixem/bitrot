@@ -3,15 +3,20 @@ import { createPortal } from "react-dom";
 import {
   MODE_CATALOG,
   type ModeCatalogEntry,
+  getModeDefinition,
+  cloneModeConfigs,
+  type ModeConfigMap,
   type ModeId
 } from "@/modes/definitions";
+import ModeConfigEditor from "@/editor/ModeConfigEditor";
 import useModalScrollLock from "@/ui/modal/useModalScrollLock";
 
 type ModeSelectModalProps = {
   isOpen: boolean;
   activeModeId: ModeId;
+  modeConfigs: ModeConfigMap;
   onClose: () => void;
-  onSelect: (modeId: ModeId) => void;
+  onApply: (modeId: ModeId, config: ModeConfigMap[ModeId]) => void;
 };
 
 // Flatten mode metadata into a lowercase search string for fuzzy-ish matching.
@@ -27,17 +32,38 @@ const buildSearchText = (mode: ModeCatalogEntry) =>
     .join(" ")
     .toLowerCase();
 
+// Configs are flat, so a shallow comparison keeps things fast and clear.
+const isConfigEqual = (
+  current: ModeConfigMap[ModeId],
+  defaults: ModeConfigMap[ModeId]
+) => {
+  const keys = new Set([
+    ...Object.keys(current ?? {}),
+    ...Object.keys(defaults ?? {})
+  ]);
+  for (const key of keys) {
+    if (current?.[key as keyof typeof current] !== defaults?.[key as keyof typeof defaults]) {
+      return false;
+    }
+  }
+  return true;
+};
+
 // Full-screen-ish mode browser that previews and applies mode selection.
 const ModeSelectModal = ({
   isOpen,
   activeModeId,
+  modeConfigs,
   onClose,
-  onSelect
+  onApply
 }: ModeSelectModalProps) => {
   const shouldCloseRef = useRef(false);
   useModalScrollLock(isOpen);
   const [search, setSearch] = useState("");
   const [selectedModeId, setSelectedModeId] = useState<ModeId>(activeModeId);
+  const [draftConfigs, setDraftConfigs] = useState<ModeConfigMap>(() =>
+    cloneModeConfigs(modeConfigs)
+  );
 
   // Reset modal state on open so the active mode is always the starting point.
   useEffect(() => {
@@ -46,7 +72,8 @@ const ModeSelectModal = ({
     }
     setSearch("");
     setSelectedModeId(activeModeId);
-  }, [activeModeId, isOpen]);
+    setDraftConfigs(cloneModeConfigs(modeConfigs));
+  }, [activeModeId, isOpen, modeConfigs]);
 
   // Keep focus on visible results when the current selection disappears.
   useEffect(() => {
@@ -86,7 +113,14 @@ const ModeSelectModal = ({
 
   const selectedMode =
     MODE_CATALOG.find((mode) => mode.id === selectedModeId) ?? MODE_CATALOG[0];
+  const selectedDefinition = getModeDefinition(selectedModeId);
   const selectedEngineTone = selectedMode.engine === "native" ? "native" : "ffmpeg";
+  const selectedConfig =
+    draftConfigs[selectedModeId] ?? modeConfigs[selectedModeId];
+  const selectedConfigFields = selectedMode.configFields ?? [];
+  const hasConfigChanges =
+    selectedConfigFields.length > 0 &&
+    !isConfigEqual(selectedConfig, selectedDefinition.defaultConfig);
 
   if (!isOpen) {
     return null;
@@ -105,9 +139,32 @@ const ModeSelectModal = ({
     }
   };
 
-  const handleApply = () => {
-    onSelect(selectedModeId);
+  const applyMode = (modeId: ModeId) => {
+    const definition = getModeDefinition(modeId);
+    const config = draftConfigs[modeId] ?? modeConfigs[modeId] ?? definition.defaultConfig;
+    onApply(modeId, config);
     onClose();
+  };
+
+  const handleApply = () => {
+    applyMode(selectedModeId);
+  };
+
+  const handleConfigChange = (patch: Partial<ModeConfigMap[ModeId]>) => {
+    setDraftConfigs((prev) => ({
+      ...prev,
+      [selectedModeId]: {
+        ...(prev[selectedModeId] as ModeConfigMap[ModeId]),
+        ...patch
+      }
+    }));
+  };
+
+  const handleResetDefaults = () => {
+    setDraftConfigs((prev) => ({
+      ...prev,
+      [selectedModeId]: { ...selectedDefinition.defaultConfig }
+    }));
   };
 
   return createPortal(
@@ -170,23 +227,24 @@ const ModeSelectModal = ({
                     data-current={isCurrent}
                     data-engine={engineTone}
                     onClick={() => setSelectedModeId(mode.id)}
+                    onDoubleClick={() => applyMode(mode.id)}
                   >
                     <div className="mode-option__header">
                       <span className="mode-option__label">{mode.label}</span>
                       <div className="mode-option__tags">
                         {isCurrent && (
-                          <span className="mode-option__tag" data-tone="accent">
+                          <span className="mode-option__tag" data-tone="current">
                             Current
-                          </span>
-                        )}
-                        {mode.isExperimental && (
-                          <span className="mode-option__tag" data-tone="muted">
-                            Beta
                           </span>
                         )}
                         <span className="mode-option__tag" data-tone={engineTone}>
                           {engineTone === "native" ? "Native" : "FFmpeg"}
                         </span>
+                        {mode.isExperimental && (
+                          <span className="mode-option__tag" data-tone="muted">
+                            Beta
+                          </span>
+                        )}
                       </div>
                     </div>
                     <p className="mode-option__description">{mode.description}</p>
@@ -205,31 +263,59 @@ const ModeSelectModal = ({
             )}
           </div>
 
-          <aside className="mode-modal-details">
+          <aside
+            className="mode-modal-details"
+            data-has-config={selectedConfigFields.length > 0}
+          >
             <div className="mode-modal-details-header">
               <div>
                 <p className="mode-modal-details-label">Selected mode</p>
                 <h3 className="mode-modal-details-title">{selectedMode.label}</h3>
               </div>
               <div className="mode-modal-details-tags">
+                <span className="mode-option__tag" data-tone={selectedEngineTone}>
+                  {selectedEngineTone === "native" ? "Native" : "FFmpeg"}
+                </span>
                 {selectedMode.isExperimental && (
                   <span className="mode-option__tag" data-tone="muted">
                     Beta
                   </span>
                 )}
-                <span className="mode-option__tag" data-tone={selectedEngineTone}>
-                  {selectedEngineTone === "native" ? "Native" : "FFmpeg"}
-                </span>
               </div>
             </div>
-            <p className="mode-modal-details-description">
-              {selectedMode.description}
-            </p>
-            {selectedMode.details ? (
-              <p className="mode-modal-details-text">{selectedMode.details}</p>
+            <div className="mode-modal-details-section mode-modal-details-copy">
+              <p className="mode-modal-details-description">
+                {selectedMode.description}
+              </p>
+              {selectedMode.details ? (
+                <p className="mode-modal-details-text">{selectedMode.details}</p>
+              ) : null}
+            </div>
+            {selectedConfigFields.length ? (
+              <div className="mode-modal-details-section mode-modal-config">
+                <div className="mode-modal-config-header">
+                  <p className="mode-modal-details-label">Configuration</p>
+                  <button
+                    className="mode-modal-reset"
+                    type="button"
+                    data-visible={hasConfigChanges}
+                    onClick={handleResetDefaults}
+                    disabled={!hasConfigChanges}
+                    aria-hidden={!hasConfigChanges}
+                    tabIndex={hasConfigChanges ? 0 : -1}
+                  >
+                    Reset
+                  </button>
+                </div>
+                <ModeConfigEditor
+                  config={selectedConfig}
+                  fields={selectedConfigFields}
+                  onChange={handleConfigChange}
+                />
+              </div>
             ) : null}
             {selectedMode.tags?.length ? (
-              <div className="mode-modal-details-meta">
+              <div className="mode-modal-details-section mode-modal-details-meta">
                 <span className="mode-modal-details-label">Tags</span>
                 <div className="mode-modal-details-chiplist">
                   {selectedMode.tags.map((tag) => (
