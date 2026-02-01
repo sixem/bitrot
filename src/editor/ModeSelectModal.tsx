@@ -2,14 +2,20 @@ import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { createPortal } from "react-dom";
 import {
   MODE_CATALOG,
-  type ModeCatalogEntry,
   getModeDefinition,
   cloneModeConfigs,
   type ModeConfigMap,
   type ModeId
 } from "@/modes/definitions";
-import ModeConfigEditor from "@/editor/ModeConfigEditor";
+import { buildModeSearchText, isModeConfigEqual } from "@/modes/modeUtils";
+import ModeSelectDetails from "@/editor/modeSelect/ModeSelectDetails";
+import ModeSelectList from "@/editor/modeSelect/ModeSelectList";
 import useModalScrollLock from "@/ui/modal/useModalScrollLock";
+
+// MODE_CATALOG is static, so cache each mode's search text once per module load.
+const MODE_SEARCH_TEXT = new Map(
+  MODE_CATALOG.map((mode) => [mode.id, buildModeSearchText(mode)])
+);
 
 type ModeSelectModalProps = {
   isOpen: boolean;
@@ -19,37 +25,10 @@ type ModeSelectModalProps = {
   onApply: (modeId: ModeId, config: ModeConfigMap[ModeId]) => void;
 };
 
-// Flatten mode metadata into a lowercase search string for fuzzy-ish matching.
-const buildSearchText = (mode: ModeCatalogEntry) =>
-  [
-    mode.label,
-    mode.description,
-    mode.details,
-    mode.engine,
-    ...(mode.tags ?? [])
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
-
-// Configs are flat, so a shallow comparison keeps things fast and clear.
-const isConfigEqual = (
-  current: ModeConfigMap[ModeId],
-  defaults: ModeConfigMap[ModeId]
-) => {
-  const keys = new Set([
-    ...Object.keys(current ?? {}),
-    ...Object.keys(defaults ?? {})
-  ]);
-  for (const key of keys) {
-    if (current?.[key as keyof typeof current] !== defaults?.[key as keyof typeof defaults]) {
-      return false;
-    }
-  }
-  return true;
-};
-
-// Full-screen-ish mode browser that previews and applies mode selection.
+// Mode browser modal coordinates search, selection, and draft config edits.
+// - search filters the catalog list
+// - selection drives the detail panel
+// - draft configs stay local until Apply (or Reset) commits them
 const ModeSelectModal = ({
   isOpen,
   activeModeId,
@@ -61,6 +40,7 @@ const ModeSelectModal = ({
   useModalScrollLock(isOpen);
   const [search, setSearch] = useState("");
   const [selectedModeId, setSelectedModeId] = useState<ModeId>(activeModeId);
+  // Selection updates the detail pane; drafts keep edits local until Apply commits them.
   const [draftConfigs, setDraftConfigs] = useState<ModeConfigMap>(() =>
     cloneModeConfigs(modeConfigs)
   );
@@ -91,13 +71,16 @@ const ModeSelectModal = ({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [isOpen, onClose]);
 
+  const searchLabel = search.trim();
   const filteredModes = useMemo(() => {
-    const query = search.trim().toLowerCase();
+    const query = searchLabel.toLowerCase();
     if (!query) {
       return MODE_CATALOG;
     }
-    return MODE_CATALOG.filter((mode) => buildSearchText(mode).includes(query));
-  }, [search]);
+    return MODE_CATALOG.filter((mode) =>
+      (MODE_SEARCH_TEXT.get(mode.id) ?? "").includes(query)
+    );
+  }, [searchLabel]);
 
   useEffect(() => {
     if (!isOpen || filteredModes.length === 0) {
@@ -116,11 +99,13 @@ const ModeSelectModal = ({
   const selectedDefinition = getModeDefinition(selectedModeId);
   const selectedEngineTone = selectedMode.engine === "native" ? "native" : "ffmpeg";
   const selectedConfig =
-    draftConfigs[selectedModeId] ?? modeConfigs[selectedModeId];
+    draftConfigs[selectedModeId] ??
+    modeConfigs[selectedModeId] ??
+    selectedDefinition.defaultConfig;
   const selectedConfigFields = selectedMode.configFields ?? [];
   const hasConfigChanges =
     selectedConfigFields.length > 0 &&
-    !isConfigEqual(selectedConfig, selectedDefinition.defaultConfig);
+    !isModeConfigEqual(selectedConfig, selectedDefinition.defaultConfig);
 
   if (!isOpen) {
     return null;
@@ -206,127 +191,24 @@ const ModeSelectModal = ({
         </div>
 
         <div className="mode-modal-body">
-          <div className="mode-modal-list scrollable" role="listbox" aria-label="Modes">
-            {filteredModes.length === 0 ? (
-              <p className="mode-modal-empty">
-                No modes match "{search.trim()}".
-              </p>
-            ) : (
-              filteredModes.map((mode) => {
-                const isSelected = mode.id === selectedModeId;
-                const isCurrent = mode.id === activeModeId;
-                const engineTone = mode.engine === "native" ? "native" : "ffmpeg";
-                return (
-                  <button
-                    key={mode.id}
-                    type="button"
-                    className="mode-option"
-                    role="option"
-                    aria-selected={isSelected}
-                    data-selected={isSelected}
-                    data-current={isCurrent}
-                    data-engine={engineTone}
-                    onClick={() => setSelectedModeId(mode.id)}
-                    onDoubleClick={() => applyMode(mode.id)}
-                  >
-                    <div className="mode-option__header">
-                      <span className="mode-option__label">{mode.label}</span>
-                      <div className="mode-option__tags">
-                        {isCurrent && (
-                          <span className="mode-option__tag" data-tone="current">
-                            Current
-                          </span>
-                        )}
-                        <span className="mode-option__tag" data-tone={engineTone}>
-                          {engineTone === "native" ? "Native" : "FFmpeg"}
-                        </span>
-                        {mode.isExperimental && (
-                          <span className="mode-option__tag" data-tone="muted">
-                            Beta
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                    <p className="mode-option__description">{mode.description}</p>
-                    {mode.tags?.length ? (
-                      <div className="mode-option__meta">
-                        {mode.tags.map((tag) => (
-                          <span key={tag} className="mode-option__chip">
-                            {tag}
-                          </span>
-                        ))}
-                      </div>
-                    ) : null}
-                  </button>
-                );
-              })
-            )}
-          </div>
+          <ModeSelectList
+            modes={filteredModes}
+            searchLabel={searchLabel}
+            selectedModeId={selectedModeId}
+            activeModeId={activeModeId}
+            onSelect={setSelectedModeId}
+            onApply={applyMode}
+          />
 
-          <aside
-            className="mode-modal-details"
-            data-has-config={selectedConfigFields.length > 0}
-          >
-            <div className="mode-modal-details-header">
-              <div>
-                <p className="mode-modal-details-label">Selected mode</p>
-                <h3 className="mode-modal-details-title">{selectedMode.label}</h3>
-              </div>
-              <div className="mode-modal-details-tags">
-                <span className="mode-option__tag" data-tone={selectedEngineTone}>
-                  {selectedEngineTone === "native" ? "Native" : "FFmpeg"}
-                </span>
-                {selectedMode.isExperimental && (
-                  <span className="mode-option__tag" data-tone="muted">
-                    Beta
-                  </span>
-                )}
-              </div>
-            </div>
-            <div className="mode-modal-details-section mode-modal-details-copy">
-              <p className="mode-modal-details-description">
-                {selectedMode.description}
-              </p>
-              {selectedMode.details ? (
-                <p className="mode-modal-details-text">{selectedMode.details}</p>
-              ) : null}
-            </div>
-            {selectedConfigFields.length ? (
-              <div className="mode-modal-details-section mode-modal-config">
-                <div className="mode-modal-config-header">
-                  <p className="mode-modal-details-label">Configuration</p>
-                  <button
-                    className="mode-modal-reset"
-                    type="button"
-                    data-visible={hasConfigChanges}
-                    onClick={handleResetDefaults}
-                    disabled={!hasConfigChanges}
-                    aria-hidden={!hasConfigChanges}
-                    tabIndex={hasConfigChanges ? 0 : -1}
-                  >
-                    Reset
-                  </button>
-                </div>
-                <ModeConfigEditor
-                  config={selectedConfig}
-                  fields={selectedConfigFields}
-                  onChange={handleConfigChange}
-                />
-              </div>
-            ) : null}
-            {selectedMode.tags?.length ? (
-              <div className="mode-modal-details-section mode-modal-details-meta">
-                <span className="mode-modal-details-label">Tags</span>
-                <div className="mode-modal-details-chiplist">
-                  {selectedMode.tags.map((tag) => (
-                    <span key={tag} className="mode-option__chip">
-                      {tag}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            ) : null}
-          </aside>
+          <ModeSelectDetails
+            mode={selectedMode}
+            engineTone={selectedEngineTone}
+            config={selectedConfig}
+            configFields={selectedConfigFields}
+            hasConfigChanges={hasConfigChanges}
+            onResetDefaults={handleResetDefaults}
+            onConfigChange={handleConfigChange}
+          />
         </div>
 
         <div className="mode-modal-actions">
