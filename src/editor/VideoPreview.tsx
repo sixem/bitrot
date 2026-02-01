@@ -1,20 +1,20 @@
 // Editor preview player with timeline, trim, and frame controls.
-import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import type { VideoAsset } from "@/domain/video";
 import type { FrameMap } from "@/analysis/frameMap";
 import { convertFileSrc } from "@tauri-apps/api/core";
-import formatDuration from "@/utils/formatDuration";
 import { clampTime } from "@/utils/time";
 import type { FramePreviewControl } from "@/editor/useFramePreview";
 import { sanitizePath } from "@/system/path";
 import type { TrimControl } from "@/editor/preview/types";
-import { capturePreviewFrame } from "@/editor/preview/capturePreviewFrame";
 import usePreviewVideoState from "@/editor/preview/usePreviewVideoState";
 import usePreviewFrameData from "@/editor/preview/usePreviewFrameData";
 import useTrimScrub from "@/editor/preview/useTrimScrub";
 import useArrowHoldPlayback from "@/editor/preview/useArrowHoldPlayback";
 import usePreviewKeyboard from "@/editor/preview/usePreviewKeyboard";
-import { formatDurationSafe } from "@/editor/preview/utils";
+import usePreviewPlaybackControls from "@/editor/preview/usePreviewPlaybackControls";
+import usePreviewDisplayState from "@/editor/preview/usePreviewDisplayState";
+import usePreviewStatus from "@/editor/preview/usePreviewStatus";
 import PreviewSurface from "@/editor/preview/PreviewSurface";
 import PreviewToolbar from "@/editor/preview/PreviewToolbar";
 import PreviewRange from "@/editor/preview/PreviewRange";
@@ -53,7 +53,6 @@ const VideoPreview = ({
   // Track arrow-key hold state for tap-vs-hold behavior.
   const holdActiveRef = useRef(false);
   const holdKeyRef = useRef<"ArrowLeft" | "ArrowRight" | null>(null);
-  const [skipSeconds, setSkipSeconds] = useState(5);
 
   // Strip quotes that sometimes wrap drag-drop paths.
   const sourcePath = sanitizePath(asset.path);
@@ -131,21 +130,10 @@ const VideoPreview = ({
     [preview, resolvedDuration]
   );
 
-  const stepBy = (delta: number) => {
-    seekTo(currentTime + delta);
-  };
-
-  const cycleSkipSeconds = useCallback(() => {
-    setSkipSeconds((value) => (value >= 5 ? 1 : value + 1));
-  }, []);
-
-  const handleSkipContextMenu = useCallback(
-    (event: MouseEvent<HTMLButtonElement>) => {
-      event.preventDefault();
-      cycleSkipSeconds();
-    },
-    [cycleSkipSeconds]
-  );
+  const { skipSeconds, stepBy, handleSkipContextMenu } = usePreviewPlaybackControls({
+    currentTime,
+    onSeek: seekTo
+  });
 
   // Keep the scrubber in sync with render progress when previewing a job.
   useEffect(() => {
@@ -159,23 +147,23 @@ const VideoPreview = ({
     setCurrentTime(clamped);
   }, [preview?.isProcessing, renderTimeSeconds, resolvedDuration]);
 
-  const scrubValue = typeof resolvedDuration === "number"
-    ? clampTime(currentTime, resolvedDuration)
-    : 0;
-  const currentFrame = resolveFrameIndex(scrubValue);
-  const clampedFrame =
-    currentFrame !== undefined && maxFrameIndex !== undefined
-      ? Math.min(currentFrame, maxFrameIndex)
-      : currentFrame;
-  const volumePercent = Math.round(volume * 100);
-  const isPreviewEnabled = !!preview?.isEnabled;
-  const showPreviewToggle = isPreviewEnabled && !isPlaying && isReady && !error;
-  const isPreviewActive = !!preview?.isActive;
-  const showPreviewFrame = isPreviewActive && (!isPlaying || !!preview?.isProcessing);
-  const previewLabel = preview?.label ?? "Preview frame";
-  const previewDisabled = !!preview?.isProcessing || !!preview?.isLoading;
-  const controlsDisabled = !!preview?.isProcessing || !!error;
-  const showPreviewStatus = isPreviewEnabled && (!isPlaying || !!preview?.isProcessing);
+  const {
+    showPreviewToggle,
+    showPreviewFrame,
+    showPreviewStatus,
+    isPreviewActive,
+    previewLabel,
+    previewDisabled,
+    controlsDisabled,
+    handlePreviewToggle
+  } = usePreviewStatus({
+    preview,
+    isPlaying,
+    isReady,
+    error,
+    currentTime,
+    videoRef
+  });
   const {
     trimEnabled,
     showPassthroughTrimWarning,
@@ -197,30 +185,25 @@ const VideoPreview = ({
     resolveTimeForFrame,
     clampFrameIndex
   });
-  // Precompute toolbar + trim labels so the render stays focused on layout.
-  const frameInfo =
-    clampedFrame !== undefined && totalFrames !== undefined
-      ? { current: clampedFrame, total: totalFrames }
-      : undefined;
-  const timeCurrentLabel = formatDuration(currentTime);
-  const timeTotalLabel = formatDurationSafe(resolvedDuration);
-  const playDisabled = !sourceUrl || controlsDisabled;
-  const volumeDisabled = !sourceUrl || controlsDisabled;
-
-  const handlePreviewToggle = () => {
-    if (!preview || previewDisabled) {
-      return;
-    }
-    if (preview.isActive && !preview.isProcessing) {
-      preview.onClear();
-      return;
-    }
-    const video = videoRef.current;
-    const frame = video
-      ? capturePreviewFrame(video)
-      : Promise.reject(new Error("Preview video is not ready."));
-    preview.onRequest({ timeSeconds: currentTime, frame });
-  };
+  // Derive labels + tool state in one memoized hook to keep renders tidy.
+  const {
+    scrubValue,
+    frameInfo,
+    timeCurrentLabel,
+    timeTotalLabel,
+    volumePercent,
+    playDisabled,
+    volumeDisabled
+  } = usePreviewDisplayState({
+    currentTime,
+    resolvedDuration,
+    resolveFrameIndex,
+    maxFrameIndex,
+    totalFrames,
+    volume,
+    sourceUrl,
+    controlsDisabled
+  });
 
   const handleRequestFrameMap = useCallback(() => {
     if (!onRequestFrameMap) {

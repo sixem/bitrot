@@ -4,6 +4,14 @@ import { clampTime } from "@/utils/time";
 import formatDuration from "@/utils/formatDuration";
 import type { TrimControl } from "@/editor/preview/types";
 import { buildTrimGradient } from "@/editor/preview/utils";
+import {
+  TRIM_HIGHLIGHT_ACTIVE,
+  TRIM_HIGHLIGHT_IDLE
+} from "@/editor/preview/previewTheme";
+import {
+  buildTrimInfoLines,
+  getTrimSelectionFlags
+} from "@/editor/preview/trimSelection";
 
 type UseTrimScrubArgs = {
   trim?: TrimControl;
@@ -29,24 +37,23 @@ const useTrimScrub = ({
 }: UseTrimScrubArgs) => {
   const lastMarkEdgeRef = useRef<"start" | "end">("end");
   const trimSelection = trim?.selection;
-  const trimHasRange =
-    !!trimSelection?.isValid &&
-    typeof trimSelection.start === "number" &&
-    typeof trimSelection.end === "number";
-  const trimEnabled = !!trimSelection?.enabled && trimHasRange;
+  const { trimHasRange, trimEnabled } = getTrimSelectionFlags(trimSelection);
   const showPassthroughTrimWarning = isPassthroughMode && trimEnabled;
 
-  const formatTimeWithFrame = (timeSeconds?: number, frameOverride?: number) => {
-    if (!Number.isFinite(timeSeconds) || timeSeconds === undefined) {
-      return "--";
-    }
-    const base = formatDuration(timeSeconds);
-    const frame = frameOverride ?? resolveFrameIndex(timeSeconds);
-    if (frame === undefined) {
-      return base;
-    }
-    return `${base} + f${frame}`;
-  };
+  const formatTimeWithFrame = useCallback(
+    (timeSeconds?: number, frameOverride?: number) => {
+      if (!Number.isFinite(timeSeconds) || timeSeconds === undefined) {
+        return "--";
+      }
+      const base = formatDuration(timeSeconds);
+      const frame = frameOverride ?? resolveFrameIndex(timeSeconds);
+      if (frame === undefined) {
+        return base;
+      }
+      return `${base} + f${frame}`;
+    },
+    [resolveFrameIndex]
+  );
 
   const trimLengthFrames = useMemo(() => {
     if (!trimHasRange) {
@@ -82,9 +89,7 @@ const useTrimScrub = ({
       typeof trimSelection?.end === "number"
         ? clampTime(trimSelection.end, durationSeconds)
         : undefined;
-    const highlight = trimEnabled
-      ? "var(--trim-highlight-active)"
-      : "var(--trim-highlight-idle)";
+    const highlight = trimEnabled ? TRIM_HIGHLIGHT_ACTIVE : TRIM_HIGHLIGHT_IDLE;
     if (start !== undefined && end !== undefined && end > start) {
       const startPct = (start / durationSeconds) * 100;
       const endPct = (end / durationSeconds) * 100;
@@ -106,19 +111,26 @@ const useTrimScrub = ({
     (trimSelection?.start === undefined && trimSelection?.end === undefined);
   const trimToggleDisabled = !trimHasRange || controlsDisabled;
 
-  const trimInfoLines = trim
-    ? trimHasRange
-      ? [
-          `In ${formatTimeWithFrame(trimSelection?.start)}`,
-          `Out ${formatTimeWithFrame(trimSelection?.end)}`,
-          `Len ${formatTimeWithFrame(trimSelection?.lengthSeconds, trimLengthFrames)}`
-        ]
-      : trimSelection?.start !== undefined
-        ? [`Start ${formatTimeWithFrame(trimSelection.start)}`, "Awaiting end"]
-        : trimSelection?.end !== undefined
-          ? [`End ${formatTimeWithFrame(trimSelection.end)}`, "Awaiting start"]
-          : ["No selection"]
-    : [];
+  // Memoize label strings so the toolbar does not rebuild them on each tick.
+  const trimInfoLines = useMemo(
+    () =>
+      buildTrimInfoLines({
+        hasTrim: !!trim,
+        selection: trimSelection,
+        trimHasRange,
+        trimLengthFrames,
+        formatTimeWithFrame
+      }),
+    [
+      formatTimeWithFrame,
+      trim,
+      trimHasRange,
+      trimLengthFrames,
+      trimSelection?.end,
+      trimSelection?.lengthSeconds,
+      trimSelection?.start
+    ]
+  );
 
   // Snap to the closest frame boundary using per-frame timestamps when available.
   const snapToFrame = useCallback(

@@ -1,10 +1,10 @@
 // Shared constants + helpers for preview scrubbing and trim display.
 import formatDuration from "@/utils/formatDuration";
+// Theme-driven CSS var string; keep it as CSS so themes can override it.
+import { TRIM_TRACK_BASE_COLOR } from "./previewTheme";
 
 // Shared helpers for the preview UI (scrubbing, trim display, keyboard checks).
 export const MIN_SCRUB_STEP_SECONDS = 0.001;
-// Default to the surface tone so trim selections don't darken light themes.
-export const TRIM_TRACK_BASE_COLOR = "var(--trim-track-base, var(--surface-5))";
 // Playback cadence for arrow-key holds.
 export const HOLD_PLAYBACK_RATE = 1.0;
 // Reverse has to be simulated, so step at the effective FPS rate.
