@@ -57,6 +57,11 @@ jobs:
       - name: Install FFmpeg (Windows)
         if: matrix.os == 'windows-latest'
         run: choco install ffmpeg --no-progress
+      - name: Install FFmpeg (macOS)
+        if: matrix.os == 'macos-latest'
+        run: brew install ffmpeg
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: 1
       - name: Setup ffmpeg sidecars (Windows)
         if: matrix.os == 'windows-latest'
         run: pnpm run setup:ffmpeg
@@ -65,6 +70,9 @@ jobs:
           FFPROBE_BIN: C:\ProgramData\chocolatey\lib\ffmpeg\tools\ffprobe.exe
       - name: Setup ffmpeg sidecars (Linux)
         if: matrix.os == 'ubuntu-latest'
+        run: pnpm run setup:ffmpeg
+      - name: Setup ffmpeg sidecars (macOS)
+        if: matrix.os == 'macos-latest'
         run: pnpm run setup:ffmpeg
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
@@ -97,6 +105,17 @@ jobs:
           mkdir -p src-tauri/target/release/unbundled
           cp src-tauri/target/release/bitrot src-tauri/target/release/unbundled/bitrot
           tar -czf src-tauri/target/release/bitrot-macos-unbundled.tar.gz -C src-tauri/target/release/unbundled bitrot
+      - name: Build macOS bundles (best effort)
+        if: matrix.os == 'macos-latest'
+        id: macos_bundle
+        continue-on-error: true
+        run: pnpm tauri build --bundles dmg
+      - name: Upload macOS bundled artifact (best effort)
+        if: matrix.os == 'macos-latest' && steps.macos_bundle.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-bundled
+          path: src-tauri/target/release/bundle/dmg/*.dmg
       - name: Build Linux app (no bundle)
         if: matrix.os == 'ubuntu-latest'
         run: pnpm tauri build --no-bundle
