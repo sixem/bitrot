@@ -16,6 +16,8 @@
         "title": "BitRot",
         "width": 1200,
         "height": 800,
+        "minWidth": 720,
+        "minHeight": 640,
         "resizable": true,
         "backgroundColor": "#000000",
         "dragDropEnabled": true
