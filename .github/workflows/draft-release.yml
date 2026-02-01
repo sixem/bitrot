@@ -24,8 +24,6 @@ jobs:
           - os: ubuntu-latest
             artifact-name: linux-bundles
             upload-path: |
-              src-tauri/target/release/bundle/deb/*.deb
-              src-tauri/target/release/bundle/rpm/*.rpm
               src-tauri/target/release/bundle/appimage/*.AppImage
           - os: macos-latest
             artifact-name: macos-bundles
@@ -76,7 +74,7 @@ jobs:
       - name: Build Windows app (no bundle)
         if: matrix.os == 'windows-latest'
         run: pnpm tauri build --no-bundle
-      - name: Package Windows unbundled binary
+      - name: Package Windows unbundled exe
         if: matrix.os == 'windows-latest'
         run: |
           New-Item -ItemType Directory -Force -Path src-tauri/target/release/unbundled | Out-Null
@@ -85,6 +83,14 @@ jobs:
       - name: Build Windows bundles
         if: matrix.os == 'windows-latest'
         run: pnpm tauri build --bundles msi,nsis
+      - name: Package Windows bundled exe
+        if: matrix.os == 'windows-latest'
+        run: |
+          New-Item -ItemType Directory -Force -Path src-tauri/target/release/bundled/binaries | Out-Null
+          Copy-Item -Force src-tauri/target/release/bitrot.exe src-tauri/target/release/bundled/bitrot-bundled.exe
+          Copy-Item -Force src-tauri/binaries/ffmpeg.exe src-tauri/target/release/bundled/binaries/ffmpeg.exe
+          Copy-Item -Force src-tauri/binaries/ffprobe.exe src-tauri/target/release/bundled/binaries/ffprobe.exe
+          Compress-Archive -Path src-tauri/target/release/bundled/* -DestinationPath src-tauri/target/release/bitrot-windows-bundled.zip -Force
       - name: Build macOS app (no bundle)
         if: matrix.os == 'macos-latest'
         run: pnpm tauri build --no-bundle
@@ -108,7 +114,7 @@ jobs:
           tar -czf src-tauri/target/release/bitrot-linux-unbundled.tar.gz -C src-tauri/target/release/unbundled bitrot
       - name: Build Linux bundles
         if: matrix.os == 'ubuntu-latest'
-        run: pnpm tauri build --bundles appimage,deb,rpm
+        run: pnpm tauri build --bundles appimage
       - name: Upload ${{ matrix.os }} artifact
         uses: actions/upload-artifact@v4
         with:
@@ -120,6 +126,12 @@ jobs:
         with:
           name: windows-unbundled
           path: src-tauri/target/release/bitrot-windows-unbundled.zip
+      - name: Upload Windows bundled artifact
+        if: matrix.os == 'windows-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-bundled
+          path: src-tauri/target/release/bitrot-windows-bundled.zip
       - name: Upload Linux unbundled artifact
         if: matrix.os == 'ubuntu-latest'
         uses: actions/upload-artifact@v4
@@ -145,6 +157,22 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: artifacts
+      - name: Normalize artifact filenames to lowercase
+        run: |
+          shopt -s globstar
+          for path in artifacts/**/*; do
+            [ -f "$path" ] || continue
+            dir=$(dirname "$path")
+            base=$(basename "$path")
+            lower=$(echo "$base" | tr '[:upper:]' '[:lower:]')
+            if [ "$base" != "$lower" ]; then
+              if [ -e "$dir/$lower" ]; then
+                echo "Filename collision when lowercasing: $dir/$lower" >&2
+                exit 1
+              fi
+              mv "$path" "$dir/$lower"
+            fi
+          done
       - name: Setup node
         uses: actions/setup-node@v4
         with:
@@ -164,15 +192,17 @@ jobs:
           ## Bundles
 
           - Windows: MSI + NSIS installers (includes ffmpeg/ffprobe sidecars).
-          - Windows (unbundled): `bitrot.exe` zip. Requires ffmpeg/ffprobe on PATH or placed next to the binary.
+          - Windows (unbundled): `bitrot-windows-unbundled.zip` (`bitrot.exe` only). Requires ffmpeg/ffprobe on PATH or placed next to the binary.
+          - Windows (bundled exe): `bitrot-windows-bundled.zip` (`bitrot-bundled.exe` + `binaries/` sidecars).
           - macOS: DMG (includes ffmpeg/ffprobe sidecars).
           - macOS (unbundled): `bitrot` binary tarball. Requires ffmpeg/ffprobe on PATH or placed next to the binary.
-          - Linux: AppImage/DEB/RPM bundles (includes ffmpeg/ffprobe sidecars; ensure GTK/WebKit runtime deps are present).
+          - Linux: AppImage bundle (includes ffmpeg/ffprobe sidecars; ensure GTK/WebKit runtime deps are present).
           - Linux (unbundled): `bitrot` binary tarball. Requires ffmpeg/ffprobe on PATH or placed next to the binary, plus system GTK/WebKit deps.
 
           ## Runtime notes
 
           BitRot resolves FFmpeg in this order: local binary next to the app, bundled sidecars, then system PATH.
+          Draft assets are published with lowercase filenames.
           EOF
       - name: Create/Update draft release and upload assets
         run: |
@@ -186,7 +216,7 @@ jobs:
           mapfile -d '' FILES < <(
             find artifacts -type f \
               \( -iname '*.msi' -o -iname '*.exe' -o -iname '*.dmg' \
-                 -o -iname '*.zip' -o -iname '*.tar.gz' -o -iname '*.deb' -o -iname '*.rpm' -o -iname '*.AppImage' \) \
+                 -o -iname '*.zip' -o -iname '*.tar.gz' -o -iname '*.deb' -o -iname '*.rpm' -o -iname '*.appimage' \) \
               -print0
           )
           if [ ${#FILES[@]} -eq 0 ]; then
