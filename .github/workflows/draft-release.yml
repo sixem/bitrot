@@ -100,9 +100,40 @@ jobs:
           mkdir -p src-tauri/target/release/unbundled
           cp src-tauri/target/release/bitrot src-tauri/target/release/unbundled/bitrot
           tar -czf src-tauri/target/release/bitrot-macos-unbundled.tar.gz -C src-tauri/target/release/unbundled bitrot
-      - name: Build macOS bundle
+      - name: Build macOS app bundle
         if: matrix.os == 'macos-latest'
-        run: pnpm tauri build --bundles dmg
+        run: pnpm tauri build --bundles app
+      - name: Inject macOS sidecars into app bundle
+        if: matrix.os == 'macos-latest'
+        run: |
+          APP_PATH=$(find src-tauri/target/release/bundle -maxdepth 4 -name "*.app" -print -quit)
+          if [ -z "$APP_PATH" ]; then
+            echo "Could not locate macOS app bundle." >&2
+            find src-tauri/target/release/bundle -maxdepth 4 -type d -print
+            exit 1
+          fi
+          mkdir -p "$APP_PATH/Contents/MacOS/binaries"
+          cp src-tauri/binaries/ffmpeg "$APP_PATH/Contents/MacOS/binaries/ffmpeg"
+          cp src-tauri/binaries/ffprobe "$APP_PATH/Contents/MacOS/binaries/ffprobe"
+          chmod +x "$APP_PATH/Contents/MacOS/binaries/ffmpeg" "$APP_PATH/Contents/MacOS/binaries/ffprobe"
+      - name: Create macOS DMG
+        if: matrix.os == 'macos-latest'
+        run: |
+          APP_PATH=$(find src-tauri/target/release/bundle -maxdepth 4 -name "*.app" -print -quit)
+          if [ -z "$APP_PATH" ]; then
+            echo "Could not locate macOS app bundle." >&2
+            find src-tauri/target/release/bundle -maxdepth 4 -type d -print
+            exit 1
+          fi
+          VERSION=$(node -p "require('./package.json').version")
+          ARCH=$(uname -m)
+          if [ "$ARCH" = "arm64" ]; then
+            ARCH="aarch64"
+          elif [ "$ARCH" = "x86_64" ]; then
+            ARCH="x64"
+          fi
+          mkdir -p src-tauri/target/release/bundle/dmg
+          hdiutil create -volname "bitrot" -srcfolder "$APP_PATH" -ov -format UDZO "src-tauri/target/release/bundle/dmg/bitrot_${VERSION}_${ARCH}.dmg"
       - name: Build Linux app (no bundle)
         if: matrix.os == 'ubuntu-latest'
         run: pnpm tauri build --no-bundle
@@ -189,15 +220,23 @@ jobs:
       - name: Write draft release notes
         run: |
           cat <<'EOF' > release-notes.txt
-          ## Bundles
+          ## Bundled vs unbundled
 
-          - Windows: MSI + NSIS installers (includes ffmpeg/ffprobe sidecars).
-          - Windows (unbundled): `bitrot-windows-unbundled.zip` (`bitrot.exe` only). Requires ffmpeg/ffprobe on PATH or placed next to the binary.
-          - Windows (bundled exe): `bitrot-windows-bundled.zip` (`bitrot-bundled.exe` + `binaries/` sidecars).
-          - macOS: DMG (includes ffmpeg/ffprobe sidecars).
-          - macOS (unbundled): `bitrot` binary tarball. Requires ffmpeg/ffprobe on PATH or placed next to the binary.
-          - Linux: AppImage bundle (includes ffmpeg/ffprobe sidecars; ensure GTK/WebKit runtime deps are present).
-          - Linux (unbundled): `bitrot` binary tarball. Requires ffmpeg/ffprobe on PATH or placed next to the binary, plus system GTK/WebKit deps.
+          **Bundled** assets include ffmpeg/ffprobe sidecars inside the package.
+          **Unbundled** assets include only Bitrot and require ffmpeg/ffprobe on PATH or placed next to the binary.
+
+          ## Bundled assets
+
+          - Windows installers: `*.msi`, `*-setup.exe`
+          - Windows bundled exe: `bitrot-windows-bundled.zip`
+          - macOS DMG: `bitrot_<version>_aarch64.dmg` (or `bitrot_<version>_x64.dmg` on Intel)
+          - Linux AppImage: `*.appimage` (requires GTK/WebKit runtime deps)
+
+          ## Unbundled assets
+
+          - Windows: `bitrot-windows-unbundled.zip`
+          - macOS: `bitrot-macos-unbundled.tar.gz`
+          - Linux: `bitrot-linux-unbundled.tar.gz` (requires GTK/WebKit runtime deps)
 
           ## Runtime notes
 
