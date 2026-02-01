@@ -1,4 +1,5 @@
 @use "./surfaces" as surfaces;
+@use "./controls" as controls;
 
 // Export modal content + layout.
 
@@ -35,10 +36,11 @@
 }
 
 .export-label {
-  font-size: 0.65rem;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--muted-strong);
+  --caps-font-size: 0.65rem;
+  --caps-letter-spacing: 0.18em;
+  --caps-color: var(--muted-strong);
+
+  @include controls.caps-label;
 }
 
 .export-select--preset .ui-select-trigger {
@@ -73,9 +75,11 @@
 
 .export-preset-option__codec {
   margin-left: auto;
-  font-size: 0.65rem;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
+  --caps-font-size: 0.65rem;
+  --caps-letter-spacing: 0.18em;
+  --caps-color: var(--muted-strong);
+
+  @include controls.caps-label;
   font-variant-numeric: tabular-nums;
   text-align: right;
 }
@@ -161,7 +165,7 @@
 }
 
 .export-section {
-  --surface-bg: rgba(0, 0, 0, 0.3);
+  --surface-bg: var(--panel-bg-soft);
   --surface-border: 1px solid var(--border);
   --surface-radius: var(--radius-lg);
 
@@ -173,10 +177,11 @@
 }
 
 .export-section-header {
-  font-size: 0.65rem;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--muted-strong);
+  --caps-font-size: 0.65rem;
+  --caps-letter-spacing: 0.18em;
+  --caps-color: var(--muted-strong);
+
+  @include controls.caps-label;
 }
 
 .export-grid {
@@ -199,7 +204,7 @@
   --button-padding: 6px 10px;
   --button-font-size: 0.6rem;
   --button-letter-spacing: 0.14em;
-  --button-bg: rgba(0, 0, 0, 0.55);
+  --button-bg: var(--button-bg-strong);
   align-self: flex-start;
 }
 
@@ -209,7 +214,7 @@
   --button-font-size: 0.85rem;
   --button-letter-spacing: 0.01em;
   --button-text-transform: none;
-  --button-bg: #050505;
+  --button-bg: var(--surface-1);
   width: 100%;
   line-height: 1.2;
   min-height: 34px;
@@ -239,7 +244,7 @@
 }
 
 .export-args code {
-  --surface-bg: #080808;
+  --surface-bg: var(--surface-2);
   --surface-border: 1px solid var(--border);
   --surface-radius: var(--radius-md);
 

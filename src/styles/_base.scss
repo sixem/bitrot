@@ -1,11 +1,12 @@
-@use "../theme" as theme;
+@use "@/theme" as theme;
 
 // Base layer: global tokens, font faces, resets, and document defaults.
 // Keeping these together makes global behavior easy to audit.
 
 @font-face {
   font-family: "Cinzel";
-  src: url("./assets/fonts/cinzel/Cinzel-VariableFont_wght.ttf") format("truetype");
+  // Keep the URL relative to this file so Vite resolves the asset correctly.
+  src: url("../assets/fonts/cinzel/Cinzel-VariableFont_wght.ttf") format("truetype");
   font-weight: 400 900;
   font-style: normal;
   font-display: swap;
@@ -24,6 +25,19 @@
 // Optional hook for swapping themes via data-theme on the root element.
 :root[data-theme="midnight"] {
   @include theme.theme-vars("midnight");
+}
+
+:root[data-theme="ember"] {
+  @include theme.theme-vars("ember");
+}
+
+:root[data-theme="violet"] {
+  @include theme.theme-vars("violet");
+}
+
+:root[data-theme="snow"] {
+  color-scheme: light;
+  @include theme.theme-vars("snow");
 }
 
 *,
@@ -50,8 +64,8 @@ body,
 }
 
 ::selection {
-  background: var(--tone-success-soft);
-  color: var(--accent-contrast);
+  background: var(--selection-bg, var(--tone-success-soft));
+  color: var(--selection-fg, var(--accent-contrast));
 }
 
 *:focus,
@@ -86,9 +100,10 @@ body[data-modal-open="true"] {
 
 // Global scrollbar styling keeps the UI consistent across all scrollable areas.
 :root {
-  --scrollbar-track: var(--range-track-color, #131313);
-  --scrollbar-thumb: var(--range-track-color, #131313);
-  --scrollbar-thumb-hover: var(--range-track-color, #131313);
+  // Scrollbar colors live on their own tokens so sliders don't control them.
+  --scrollbar-track: var(--scrollbar-track-color, #000);
+  --scrollbar-thumb: var(--scrollbar-thumb-color, var(--surface-5));
+  --scrollbar-thumb-hover: var(--scrollbar-thumb-hover-color, var(--surface-5));
 }
 
 :where(*) {

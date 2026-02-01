@@ -8,12 +8,12 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.86);
+  background: var(--scrim-strong);
   z-index: 60;
 }
 
 .system-gate-card {
-  --surface-bg: #080808;
+  --surface-bg: var(--surface-2);
   --surface-border: 1px solid var(--border);
   --surface-radius: var(--radius-lg);
   --surface-shadow: var(--shadow-lift);
@@ -64,7 +64,7 @@
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.78);
+  background: var(--scrim-soft);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -73,13 +73,13 @@
 
 @supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   .system-gate {
-    background: rgba(0, 0, 0, 0.8);
+    background: var(--scrim-strong-blur);
     backdrop-filter: blur(10px);
     -webkit-backdrop-filter: blur(10px);
   }
 
   .modal-backdrop {
-    background: rgba(0, 0, 0, 0.7);
+    background: var(--scrim-soft-blur);
     backdrop-filter: blur(6px);
     -webkit-backdrop-filter: blur(6px);
   }
@@ -91,7 +91,7 @@
 }
 
 .modal {
-  --surface-bg: #0a0a0a;
+  --surface-bg: var(--surface-3);
   --surface-border: 1px solid var(--border);
   --surface-radius: var(--radius-lg);
   --surface-shadow: var(--shadow-modal);
@@ -134,8 +134,9 @@
 }
 
 .modal-button--primary {
-  border-color: var(--tone-success-border);
-  background: var(--tone-success-bg);
+  border-color: var(--accent-border);
+  background: var(--accent-bg);
+  --button-hover-border: var(--accent);
 }
 
 .receipt-modal {

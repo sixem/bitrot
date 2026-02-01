@@ -45,17 +45,17 @@
   opacity: 0.7;
   background: radial-gradient(
       720px 520px at 18% 22%,
-      rgba(18, 70, 52, 0.4),
+      var(--landing-glow-1),
       transparent 72%
     ),
     radial-gradient(
       780px 540px at 82% 70%,
-      rgba(12, 50, 38, 0.34),
+      var(--landing-glow-2),
       transparent 74%
     ),
     radial-gradient(
       520px 360px at 68% 35%,
-      rgba(16, 60, 44, 0.3),
+      var(--landing-glow-3),
       transparent 72%
     );
   mix-blend-mode: normal;
@@ -68,17 +68,17 @@
   opacity: 0.65;
   background: radial-gradient(
       700px 500px at 26% 18%,
-      rgba(50, 24, 90, 0.36),
+      var(--landing-glow-4),
       transparent 74%
     ),
     radial-gradient(
       640px 460px at 72% 82%,
-      rgba(36, 16, 70, 0.3),
+      var(--landing-glow-5),
       transparent 74%
     ),
     radial-gradient(
       520px 360px at 85% 35%,
-      rgba(30, 12, 60, 0.28),
+      var(--landing-glow-6),
       transparent 72%
     );
   mix-blend-mode: normal;
@@ -119,7 +119,7 @@
   text-transform: uppercase;
   padding: 6px 10px;
   color: var(--muted);
-  background: rgba(0, 0, 0, 0.6);
+  background: var(--badge-bg);
 }
 
 .eyebrow {
@@ -153,7 +153,7 @@
 }
 
 .dropzone {
-  --surface-bg: #050505;
+  --surface-bg: var(--surface-1);
   --surface-border: 1px dashed var(--border);
   --surface-radius: var(--radius-lg);
 
@@ -163,6 +163,11 @@
 
   &[data-active="true"] {
     border-color: var(--border-strong);
+  }
+
+  &[data-clickable="true"]:hover {
+    border-color: var(--border-strong);
+    transition: none;
   }
 
   &[data-clickable="true"] {
@@ -218,6 +223,61 @@
   color: var(--muted-strong);
 }
 
+// Minimal theme toggle docked at the bottom of the landing screen.
+.theme-toggle {
+  position: absolute;
+  bottom: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  padding: 4px 6px;
+}
+
+.theme-toggle__dot {
+  position: relative;
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+.theme-toggle__dot:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--focus-ring);
+  border-radius: 999px;
+}
+
+.theme-toggle__swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: var(--theme-color);
+  box-shadow: none;
+  transition: transform 140ms ease, box-shadow 160ms ease;
+}
+
+.theme-toggle__dot[data-selected="true"] .theme-toggle__swatch {
+  transform: scale(1.2);
+}
+
+.theme-toggle__dot[data-selected="true"] .theme-toggle__swatch {
+  box-shadow: 0 0 18px var(--theme-glow), 0 0 4px var(--theme-color);
+}
+
+.theme-toggle__dot::after {
+  content: "";
+  position: absolute;
+  inset: -6px;
+  border-radius: 999px;
+}
+
 // Drag overlay sits above the landing screen during file drops.
 .drag-overlay {
   position: fixed;
@@ -225,7 +285,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.72);
+  background: var(--drag-overlay-bg);
   opacity: 0;
   transition: opacity 140ms ease;
   pointer-events: none;
@@ -238,14 +298,14 @@
 
 @supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   .drag-overlay {
-    background: rgba(0, 0, 0, 0.55);
+    background: var(--drag-overlay-bg-blur);
     backdrop-filter: blur(6px);
     -webkit-backdrop-filter: blur(6px);
   }
 }
 
 .drag-overlay-inner {
-  --surface-bg: rgba(0, 0, 0, 0.6);
+  --surface-bg: var(--overlay-panel-bg);
   --surface-border: 1px solid var(--border-strong);
   --surface-radius: var(--radius-md);
   --surface-shadow: var(--shadow-overlay);

@@ -1,4 +1,5 @@
 @use "./surfaces" as surfaces;
+@use "./controls" as controls;
 
 // Mode browser modal + mode-specific controls.
 
@@ -54,7 +55,7 @@
 
 .mode-modal-list,
 .mode-modal-details {
-  --surface-bg: rgba(0, 0, 0, 0.35);
+  --surface-bg: var(--panel-bg);
   --surface-border: 1px solid var(--border);
   --surface-radius: var(--radius-lg);
 
@@ -85,7 +86,7 @@
 
 .mode-option {
   border: 1px solid transparent;
-  background: rgba(0, 0, 0, 0.4);
+  background: var(--panel-item-bg);
   color: var(--fg);
   text-align: left;
   padding: 10px 12px;
@@ -99,14 +100,14 @@
 
 .mode-option:hover {
   border-color: var(--border-strong);
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--panel-item-hover-bg);
   transform: translateY(-1px);
 }
 
 .mode-option[data-selected="true"] {
-  border-color: var(--accent);
-  background: rgba(123, 255, 168, 0.08);
-  box-shadow: 0 0 0 1px rgba(123, 255, 168, 0.24);
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  box-shadow: 0 0 0 1px var(--accent-strong);
 }
 
 .mode-option__header {
@@ -137,32 +138,39 @@
 }
 
 .mode-option__tag {
-  font-size: 0.6rem;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
+  --caps-font-size: 0.6rem;
+  --caps-letter-spacing: 0.16em;
+  --caps-color: var(--muted-strong);
+
+  @include controls.caps-label;
   padding: 3px 8px;
   border-radius: var(--radius-pill);
   border: 1px solid var(--border);
-  color: var(--muted-strong);
-  background: rgba(0, 0, 0, 0.45);
+  background: var(--tag-bg);
 }
 
 .mode-option__tag[data-tone="accent"] {
-  border-color: var(--accent);
-  color: var(--accent);
-  background: rgba(123, 255, 168, 0.12);
+  border-color: var(--accent-border);
+  color: var(--accent-ink);
+  background: var(--accent-soft);
+}
+
+.mode-option__tag[data-tone="current"] {
+  border-color: var(--tone-success-border);
+  color: var(--tone-success-strong);
+  background: var(--tone-success-subtle);
 }
 
 .mode-option__tag[data-tone="native"] {
-  color: var(--tone-warning-strong);
-  border-color: var(--tone-warning-border);
-  background: var(--tone-warning-bg);
+  color: var(--engine-native-strong);
+  border-color: var(--engine-native-border);
+  background: var(--engine-native-bg);
 }
 
 .mode-option__tag[data-tone="ffmpeg"] {
-  color: var(--tone-info-strong);
-  border-color: var(--tone-info-border);
-  background: var(--tone-info-bg);
+  color: var(--engine-ffmpeg-strong);
+  border-color: var(--engine-ffmpeg-border);
+  background: var(--engine-ffmpeg-bg);
 }
 
 .mode-option__tag[data-tone="muted"] {
@@ -177,14 +185,15 @@
 }
 
 .mode-option__chip {
-  font-size: 0.6rem;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  --caps-font-size: 0.6rem;
+  --caps-letter-spacing: 0.12em;
+  --caps-color: var(--muted-strong);
+
+  @include controls.caps-label;
   padding: 3px 8px;
   border-radius: var(--radius-pill);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  color: var(--muted-strong);
-  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid var(--chip-border);
+  background: var(--chip-bg);
 }
 
 .mode-modal-details-header {
@@ -203,11 +212,12 @@
 }
 
 .mode-modal-details-label {
+  --caps-font-size: 0.6rem;
+  --caps-letter-spacing: 0.18em;
+  --caps-color: var(--muted-strong);
+
   margin: 0;
-  font-size: 0.6rem;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--muted-strong);
+  @include controls.caps-label;
 }
 
 .mode-modal-details-title {
@@ -223,6 +233,19 @@
   line-height: 1.5;
 }
 
+.mode-modal-details-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mode-modal-details[data-has-config="true"]
+  .mode-modal-details-section
+  + .mode-modal-details-section {
+  border-top: 1px solid var(--panel-divider);
+  padding: 12px 0 6px 0;
+}
+
 .mode-modal-details-meta {
   display: flex;
   flex-direction: column;
@@ -233,6 +256,87 @@
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+}
+
+.mode-modal-config {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.mode-modal-config-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.mode-modal-reset {
+  --caps-font-size: 0.55rem;
+  --caps-letter-spacing: 0.18em;
+  --caps-color: var(--muted);
+
+  @include controls.caps-label;
+  border: 1px solid var(--border);
+  background: transparent;
+  padding: 3px 8px;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+}
+
+.mode-modal-reset[data-visible="false"] {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.mode-modal-reset:hover {
+  border-color: var(--border-strong);
+  color: var(--fg);
+}
+
+.mode-config-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.mode-config-field {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.mode-config-field__row {
+  --config-control-width: 200px;
+  display: grid;
+  grid-template-columns: minmax(120px, 170px) minmax(0, var(--config-control-width)) auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.mode-config-field__row[data-has-value="false"] {
+  grid-template-columns: minmax(120px, 170px) minmax(0, var(--config-control-width));
+}
+
+.mode-config-field__label {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--muted-strong);
+}
+
+.mode-config-field__value {
+  font-size: 0.75rem;
+  color: var(--muted-strong);
+  font-variant-numeric: tabular-nums;
+}
+
+.mode-config-field__description {
+  margin: 0;
+  font-size: 0.7rem;
+  color: var(--muted);
+  line-height: 1.4;
 }
 
 .mode-modal-actions {
@@ -248,7 +352,7 @@
   --button-font-size: 0.75rem;
   --button-letter-spacing: 0.02em;
   --button-text-transform: none;
-  --button-bg: rgba(0, 0, 0, 0.45);
+  --button-bg: var(--button-bg-medium);
 
   width: 100%;
   display: flex;
@@ -259,25 +363,27 @@
 }
 
 .mode-select-button[aria-expanded="true"] {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 1px rgba(123, 255, 168, 0.28);
+  border-color: var(--accent-border);
+  box-shadow: 0 0 0 1px var(--accent-strong);
 }
 
 .mode-select-button__label {
-  font-size: 0.6rem;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--muted-strong);
+  --caps-font-size: 0.6rem;
+  --caps-letter-spacing: 0.18em;
+  --caps-color: var(--muted-strong);
+
+  @include controls.caps-label;
   white-space: nowrap;
   flex: 0 0 auto;
 }
 
 .mode-select-button__hint {
   margin-left: auto;
-  font-size: 0.65rem;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--muted);
+  --caps-font-size: 0.65rem;
+  --caps-letter-spacing: 0.14em;
+  --caps-color: var(--muted);
+
+  @include controls.caps-label;
   white-space: nowrap;
 }
 
@@ -296,10 +402,11 @@
 }
 
 .mode-control-label {
-  font-size: 0.65rem;
-  text-transform: uppercase;
-  letter-spacing: 0.18em;
-  color: var(--muted-strong);
+  --caps-font-size: 0.65rem;
+  --caps-letter-spacing: 0.18em;
+  --caps-color: var(--muted-strong);
+
+  @include controls.caps-label;
 }
 
 .mode-control-value {

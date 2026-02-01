@@ -3,6 +3,15 @@
 // Controls layer: shared primitives for buttons, inputs, selects, sliders, and pills.
 // These use CSS variables so components can tune sizing without copying full styles.
 
+// Shared uppercase label styling for compact UI labels.
+@mixin caps-label {
+  font-size: var(--caps-font-size, 0.65rem);
+  letter-spacing: var(--caps-letter-spacing, 0.18em);
+  text-transform: uppercase;
+  color: var(--caps-color, var(--muted-strong));
+  font-weight: var(--caps-weight, inherit);
+}
+
 :where(
   .ui-button,
   .system-gate-button,
@@ -73,7 +82,7 @@
   --control-padding: 8px 10px;
   --control-font-size: 0.85rem;
   --control-radius: var(--radius-md);
-  --control-bg: #050505;
+  --control-bg: var(--surface-1);
   --control-border: 1px solid var(--border);
   --control-color: var(--fg);
   --control-cursor: text;
@@ -137,7 +146,7 @@
 }
 
 .ui-select-menu {
-  --surface-bg: #050505;
+  --surface-bg: var(--surface-1);
   --surface-border: 1px solid var(--border);
   --surface-radius: var(--radius-md);
   --surface-shadow: var(--shadow-menu);
@@ -165,7 +174,7 @@
 }
 
 .ui-select-option:not(:disabled):hover {
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--select-option-hover-bg);
 }
 
 .ui-select-option[data-selected="true"] {
@@ -184,7 +193,7 @@
 .ui-select-custom {
   margin-top: 4px;
   padding-top: 6px;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  border-top: 1px solid var(--select-divider);
 }
 
 .ui-select-custom-toggle {
@@ -196,10 +205,11 @@
 }
 
 .ui-select-custom-label {
-  text-transform: uppercase;
-  letter-spacing: 0.18em;
-  font-size: 0.6rem;
-  color: var(--muted-strong);
+  --caps-font-size: 0.6rem;
+  --caps-letter-spacing: 0.18em;
+  --caps-color: var(--muted-strong);
+
+  @include caps-label;
 }
 
 .ui-select-custom-value {
@@ -216,7 +226,7 @@
   padding: 4px;
   border-radius: calc(var(--radius-md) - 2px);
   border: 1px solid var(--border);
-  background: rgba(0, 0, 0, 0.5);
+  background: var(--control-bg-muted);
 }
 
 .ui-select-custom-field {
@@ -231,26 +241,27 @@
 }
 
 .ui-select-custom-unit {
-  font-size: 0.7rem;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--muted-strong);
+  --caps-font-size: 0.7rem;
+  --caps-letter-spacing: 0.12em;
+  --caps-color: var(--muted-strong);
+
+  @include caps-label;
 }
 
 // Range sliders: shared base handles styling, this class just tunes sizing + track tint.
 :where(.range-input, .mode-slider, .preview-volume) {
   --range-height: 14px;
   --range-track-height: 4px;
-  --range-track-color: #131313;
+  --range-track-color: var(--accent-bg);
   --range-thumb-size: 12px;
   --range-thumb-offset: -4px;
-  --range-thumb-border: 2px solid #050505;
-  --range-thumb-color: var(--fg);
-  --range-thumb-shadow: 0 0 6px rgba(0, 0, 0, 0.6);
+  --range-thumb-border: 2px solid var(--surface-1);
+  --range-thumb-color: var(--accent);
   --range-disabled-opacity: 0.4;
 
   width: 100%;
   appearance: none;
+  accent-color: var(--accent);
   height: var(--range-height);
   border-radius: 999px;
   background: transparent;
@@ -283,7 +294,7 @@
   border-radius: 50%;
   border: var(--range-thumb-border);
   background: var(--range-thumb-color);
-  box-shadow: var(--range-thumb-shadow);
+  box-shadow: var(--range-thumb-shadow, 0 0 6px rgba(0, 0, 0, 0.6));
   margin-top: var(--range-thumb-offset);
 }
 
@@ -293,7 +304,16 @@
   border-radius: 50%;
   border: var(--range-thumb-border);
   background: var(--range-thumb-color);
-  box-shadow: var(--range-thumb-shadow);
+  box-shadow: var(--range-thumb-shadow, 0 0 6px rgba(0, 0, 0, 0.6));
+}
+
+// Scrubber ranges want a slightly larger touch target than the defaults.
+:where(.range-input) {
+  --range-height: 16px;
+  --range-thumb-size: 14px;
+  --range-thumb-offset: -6px;
+  --scrub-track: var(--surface-5);
+  --range-track-color: var(--scrub-track);
 }
 
 // Pill tags for labels and status chips.
@@ -301,7 +321,7 @@
   --pill-font-size: 0.65rem;
   --pill-letter-spacing: 0.18em;
   --pill-padding: 4px 10px;
-  --pill-bg: rgba(0, 0, 0, 0.35);
+  --pill-bg: var(--pill-bg-default);
   --pill-color: var(--muted);
   --pill-border: 1px solid var(--border);
 
