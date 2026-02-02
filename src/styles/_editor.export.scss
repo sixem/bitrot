@@ -100,6 +100,39 @@
   border-color: var(--border-strong);
 }
 
+.export-input-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.export-input-row .export-input {
+  width: 100%;
+  min-width: 0;
+}
+
+.export-input-action {
+  --button-padding: 6px;
+  --button-radius: var(--radius-md);
+  --button-font-size: 0.8rem;
+  --button-letter-spacing: 0;
+  --button-text-transform: none;
+  --button-bg: var(--surface-1);
+
+  width: 34px;
+  height: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted-strong);
+}
+
+.export-input-icon {
+  width: 16px;
+  height: 16px;
+}
+
 .export-help {
   margin: 2px 0 0;
   font-size: 0.72rem;
