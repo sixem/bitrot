@@ -1,6 +1,6 @@
 [package]
 name = "bitrot"
-version = "1.0.1"
+version = "1.0.2"
 description = "Tauri + React app"
 authors = ["you"]
 license = "MIT"
