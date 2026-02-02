@@ -3,7 +3,7 @@ mod modes;
 mod native;
 
 use ffmpeg::{frames as ffprobe_frames, jobs as ffmpeg_jobs};
-use modes::{block_shift, byte_range, datamosh, pixelsort, vaporwave};
+use modes::{block_shift, byte_range, datamosh, kaleidoscope, pixelsort, vaporwave};
 use native::preview as native_preview;
 
 use std::path::{Path, PathBuf};
@@ -172,6 +172,7 @@ pub fn run() {
     .manage(byte_range::ModuloMappingJobs::default())
     .manage(block_shift::BlockShiftJobs::default())
     .manage(vaporwave::VaporwaveJobs::default())
+    .manage(kaleidoscope::KaleidoscopeJobs::default())
     .manage(native_preview::PreviewBuffers::default())
     .manage(ffmpeg_jobs::FfmpegJobs::default())
     .invoke_handler(tauri::generate_handler![
@@ -198,6 +199,12 @@ pub fn run() {
       block_shift::block_shift_preview_append,
       block_shift::block_shift_preview_finish,
       block_shift::block_shift_preview_discard,
+      kaleidoscope::kaleidoscope_process,
+      kaleidoscope::kaleidoscope_cancel,
+      kaleidoscope::kaleidoscope_preview_start,
+      kaleidoscope::kaleidoscope_preview_append,
+      kaleidoscope::kaleidoscope_preview_finish,
+      kaleidoscope::kaleidoscope_preview_discard,
       vaporwave::vaporwave_process,
       vaporwave::vaporwave_cancel,
       vaporwave::vaporwave_preview_start,
