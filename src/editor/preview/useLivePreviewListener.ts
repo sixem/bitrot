@@ -25,7 +25,8 @@ const PREVIEW_EVENT_NAMES: Record<ModePreview, string> = {
   pixelsort: "pixelsort-preview",
   "modulo-mapping": "modulo-mapping-preview",
   "block-shift": "block-shift-preview",
-  vaporwave: "vaporwave-preview"
+  vaporwave: "vaporwave-preview",
+  kaleidoscope: "kaleidoscope-preview"
 };
 
 // Handles event wiring + cleanup for live preview updates during processing.

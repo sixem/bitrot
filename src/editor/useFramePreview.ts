@@ -6,6 +6,7 @@ import { sendPixelsortPreviewFrame } from "@/editor/preview/sendPixelsortPreview
 import { sendModuloMappingPreviewFrame } from "@/editor/preview/sendByteRangePreviewFrame";
 import { sendBlockShiftPreviewFrame } from "@/editor/preview/sendBlockShiftPreviewFrame";
 import { sendVaporwavePreviewFrame } from "@/editor/preview/sendVaporwavePreviewFrame";
+import { sendKaleidoscopePreviewFrame } from "@/editor/preview/sendKaleidoscopePreviewFrame";
 import { buildPreviewUrl } from "@/editor/preview/previewUrl";
 import useLivePreviewListener from "@/editor/preview/useLivePreviewListener";
 import usePreviewState from "@/editor/preview/usePreviewState";
@@ -18,6 +19,7 @@ import type { PixelsortConfig } from "@/modes/pixelsort";
 import type { ModuloMappingConfig } from "@/modes/moduloMapping";
 import type { BlockShiftConfig } from "@/modes/blockShift";
 import type { VaporwaveConfig } from "@/modes/vaporwave";
+import type { KaleidoscopeConfig } from "@/modes/kaleidoscope";
 import { cleanupPreviewFile, registerPreviewFile } from "@/system/previewFiles";
 import makeDebug from "@/utils/debug";
 
@@ -209,6 +211,12 @@ const useFramePreview = ({
           responsePath = await sendVaporwavePreviewFrame(
             { width, height, data },
             modeConfig as VaporwaveConfig,
+            { shouldAbort: isStale }
+          );
+        } else if (previewMode === "kaleidoscope") {
+          responsePath = await sendKaleidoscopePreviewFrame(
+            { width, height, data },
+            modeConfig as KaleidoscopeConfig,
             { shouldAbort: isStale }
           );
         } else {

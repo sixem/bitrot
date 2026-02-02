@@ -1,4 +1,4 @@
-﻿﻿# BitRot
+# BitRot
 
 _BitRot (/ˈbɪt.rɒt/_ noun) — A simple interface for creating glitchy video effects
 
