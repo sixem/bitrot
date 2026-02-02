@@ -17,6 +17,7 @@ type UsePreviewKeyboardArgs = {
   holdActiveRef: MutableRefObject<boolean>;
   holdKeyRef: MutableRefObject<"ArrowLeft" | "ArrowRight" | null>;
   onRequestFrameMap: () => void;
+  onTogglePlayback: () => void;
 };
 
 // Keyboard shortcuts for frame-by-frame nudging and trim adjustments.
@@ -33,11 +34,13 @@ const usePreviewKeyboard = ({
   stopHoldPlayback,
   holdActiveRef,
   holdKeyRef,
-  onRequestFrameMap
+  onRequestFrameMap,
+  onTogglePlayback
 }: UsePreviewKeyboardArgs) => {
   useEffect(() => {
     const canNudgeFrames = hasFrameMap || !!frameDurationSeconds;
     const canPromptFrameMap = canRequestFrameMap;
+    const isModalOpen = () => document?.body?.dataset.modalOpen === "true";
 
     const resolveFrameDelta = (key: string) => {
       // Support comma/period frame stepping alongside arrow keys.
@@ -54,7 +57,34 @@ const usePreviewKeyboard = ({
     };
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.defaultPrevented || controlsDisabled || !sourceUrl) {
+      if (event.defaultPrevented) {
+        return;
+      }
+      if (isModalOpen()) {
+        if (holdActiveRef.current) {
+          holdKeyRef.current = null;
+          stopHoldPlayback();
+        }
+        return;
+      }
+      if (controlsDisabled || !sourceUrl) {
+        return;
+      }
+      // Space toggles play/pause across the editor preview.
+      const isSpace =
+        event.code === "Space" || event.key === " " || event.key === "Spacebar";
+      if (isSpace) {
+        if (event.metaKey || event.ctrlKey || event.altKey) {
+          return;
+        }
+        if (isEditableTarget(event.target)) {
+          return;
+        }
+        event.preventDefault();
+        if (event.repeat) {
+          return;
+        }
+        onTogglePlayback();
         return;
       }
       const delta = resolveFrameDelta(event.key);
@@ -113,6 +143,13 @@ const usePreviewKeyboard = ({
     };
 
     const handleKeyUp = (event: KeyboardEvent) => {
+      if (isModalOpen()) {
+        if (holdActiveRef.current) {
+          holdKeyRef.current = null;
+          stopHoldPlayback();
+        }
+        return;
+      }
       if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") {
         return;
       }
@@ -148,6 +185,7 @@ const usePreviewKeyboard = ({
     holdKeyRef,
     nudgeTrimBoundary,
     onRequestFrameMap,
+    onTogglePlayback,
     seekByFrames,
     sourceUrl,
     startHoldPlayback,

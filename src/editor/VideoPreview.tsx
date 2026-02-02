@@ -264,7 +264,8 @@ const VideoPreview = ({
     stopHoldPlayback,
     holdActiveRef,
     holdKeyRef,
-    onRequestFrameMap: handleRequestFrameMap
+    onRequestFrameMap: handleRequestFrameMap,
+    onTogglePlayback: handleTogglePlayback
   });
 
   return (

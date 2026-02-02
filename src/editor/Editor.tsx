@@ -129,6 +129,10 @@ const Editor = ({ asset, onReplace, onBack }: EditorProps) => {
   }, [asset.path]);
 
   useEffect(() => {
+    setReceipt(null);
+  }, [asset.path]);
+
+  useEffect(() => {
     if (!metadataIsVfr) {
       setFrameMapRequestId(0);
     }
