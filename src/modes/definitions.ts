@@ -32,6 +32,11 @@ import {
   type VaporwaveConfig
 } from "@/modes/vaporwave";
 import {
+  kaleidoscopeConfigFields,
+  defaultKaleidoscopeConfig,
+  type KaleidoscopeConfig
+} from "@/modes/kaleidoscope";
+import {
   buildVhsFilter,
   vhsConfigFields,
   defaultVhsConfig,
@@ -55,6 +60,7 @@ export type ModeId =
   | "modulo-mapping"
   | "block-shift"
   | "vaporwave"
+  | "kaleidoscope"
   | "datamosh";
 
 export type ModeEngine = "ffmpeg" | "native";
@@ -64,12 +70,14 @@ export type ModeRunner =
   | "datamosh"
   | "modulo-mapping"
   | "block-shift"
-  | "vaporwave";
+  | "vaporwave"
+  | "kaleidoscope";
 export type ModePreview =
   | "pixelsort"
   | "modulo-mapping"
   | "block-shift"
-  | "vaporwave";
+  | "vaporwave"
+  | "kaleidoscope";
 export type ModeTag = string;
 
 export type ModeConfigMap = {
@@ -81,6 +89,7 @@ export type ModeConfigMap = {
   "modulo-mapping": ModuloMappingConfig;
   "block-shift": BlockShiftConfig;
   vaporwave: VaporwaveConfig;
+  kaleidoscope: KaleidoscopeConfig;
   pixelsort: PixelsortConfig;
   datamosh: DatamoshConfig;
 };
@@ -150,6 +159,19 @@ export const MODE_DEFINITIONS: ModeDefinition[] = [
     preview: "vaporwave",
     defaultConfig: defaultVaporwaveConfig,
     configFields: vaporwaveConfigFields,
+    encode: "h264"
+  },
+  {
+    id: "kaleidoscope",
+    label: "Kaleidoscope",
+    description: "Mirror slices of the frame into symmetric wedges.",
+    details: "Reflects pixels around a center point for prismatic symmetry.",
+    tags: ["mirror", "symmetry", "prism"],
+    engine: "native",
+    runner: "kaleidoscope",
+    preview: "kaleidoscope",
+    defaultConfig: defaultKaleidoscopeConfig,
+    configFields: kaleidoscopeConfigFields,
     encode: "h264"
   },
   {

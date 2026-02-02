@@ -11,6 +11,7 @@ import { runPixelsortJob } from "@/jobs/pixelsortRunner";
 import { runModuloMappingJob } from "@/jobs/byteRangeRunner";
 import { runBlockShiftJob } from "@/jobs/blockShiftRunner";
 import { runVaporwaveJob } from "@/jobs/vaporwaveRunner";
+import { runKaleidoscopeJob } from "@/jobs/kaleidoscopeRunner";
 import { normalizeTrimRange } from "@/jobs/trim";
 import { buildFfmpegArgs } from "@/jobs/ffmpegRunnerArgs";
 import {
@@ -45,6 +46,10 @@ import {
   defaultVaporwaveConfig,
   type VaporwaveConfig
 } from "@/modes/vaporwave";
+import {
+  defaultKaleidoscopeConfig,
+  type KaleidoscopeConfig
+} from "@/modes/kaleidoscope";
 import type { JobProgress } from "@/jobs/types";
 import {
   estimateInputBitrateCapKbps,
@@ -178,6 +183,23 @@ const runnerStrategies: Partial<Record<ModeRunner, RunnerHandler>> = {
       outputPath,
       options.durationSeconds,
       vaporwaveConfig,
+      profile,
+      options.trimStartSeconds,
+      options.trimEndSeconds,
+      callbacks
+    );
+  },
+  kaleidoscope: async ({ asset, outputPath, options, profile, callbacks }) => {
+    const kaleidoscopeConfig = resolveConfig(
+      options.modeConfig as KaleidoscopeConfig | undefined,
+      defaultKaleidoscopeConfig
+    );
+    debug("delegating to kaleidoscope pipeline");
+    return runKaleidoscopeJob(
+      asset,
+      outputPath,
+      options.durationSeconds,
+      kaleidoscopeConfig,
       profile,
       options.trimStartSeconds,
       options.trimEndSeconds,

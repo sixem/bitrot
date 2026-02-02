@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { GlitchConfig } from "@/modes/glitch";
+import type { KaleidoscopeConfig } from "@/modes/kaleidoscope";
 import type { VhsConfig } from "@/modes/vhs";
 import type { DatablendConfig } from "@/modes/datablend";
 import type { PixelsortConfig } from "@/modes/pixelsort";
@@ -14,6 +15,7 @@ import {
   DatablendControls,
   DatamoshControls,
   GlitchControls,
+  KaleidoscopeControls,
   PixelsortControls,
   VhsControls,
   VaporwaveControls
@@ -107,6 +109,13 @@ const ModeCard = ({
     });
   };
 
+  const handleKaleidoscopeConfigChange = (patch: Partial<KaleidoscopeConfig>) => {
+    onConfigChange({
+      ...(config as KaleidoscopeConfig),
+      ...patch
+    });
+  };
+
   const modeControls = (() => {
     if (value === "vhs") {
       return (
@@ -176,6 +185,15 @@ const ModeCard = ({
         <DatamoshControls
           config={config as DatamoshConfig}
           onChange={handleDatamoshConfigChange}
+          disabled={disabled}
+        />
+      );
+    }
+    if (value === "kaleidoscope") {
+      return (
+        <KaleidoscopeControls
+          config={config as KaleidoscopeConfig}
+          onChange={handleKaleidoscopeConfigChange}
           disabled={disabled}
         />
       );
