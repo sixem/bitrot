@@ -120,6 +120,23 @@
   padding: 6px 10px;
   color: var(--muted);
   background: var(--badge-bg);
+  border: 1px solid transparent;
+  border-radius: var(--radius-pill);
+  font-family: inherit;
+  line-height: 1;
+  cursor: pointer;
+  appearance: none;
+}
+
+.version:hover,
+.version:focus-visible {
+  color: var(--fg);
+  border-color: var(--border-strong);
+  background: var(--panel-item-bg);
+}
+
+.version:focus-visible {
+  box-shadow: 0 0 0 2px var(--focus-ring);
 }
 
 .eyebrow {

@@ -1,11 +1,13 @@
-import { useEffect, useRef, type MouseEvent } from "react";
+import { useEffect, useRef, type MouseEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import useModalScrollLock from "@/ui/modal/useModalScrollLock";
 
 type ModalProps = {
   isOpen: boolean;
-  title: string;
-  message: string;
+  title?: string;
+  ariaLabel?: string;
+  // Message supports rich content for about screens or text-only dialogs.
+  message: ReactNode;
   confirmLabel?: string;
   cancelLabel?: string;
   onConfirm?: () => void;
@@ -17,6 +19,7 @@ type ModalProps = {
 const Modal = ({
   isOpen,
   title,
+  ariaLabel,
   message,
   confirmLabel = "Close",
   cancelLabel,
@@ -26,6 +29,7 @@ const Modal = ({
 }: ModalProps) => {
   const shouldCloseRef = useRef(false);
   useModalScrollLock(isOpen);
+  const modalTitle = title?.trim();
   const handleConfirm = () => {
     if (onConfirm) {
       onConfirm();
@@ -93,19 +97,22 @@ const Modal = ({
         className="modal"
         role="dialog"
         aria-modal="true"
-        aria-labelledby="modal-title"
+        aria-labelledby={modalTitle ? "modal-title" : undefined}
+        aria-label={modalTitle ? undefined : ariaLabel ?? "Dialog"}
         aria-describedby="modal-body"
         onMouseDown={() => {
           shouldCloseRef.current = false;
         }}
         onClick={(event) => event.stopPropagation()}
       >
-        <h2 id="modal-title" className="modal-title">
-          {title}
-        </h2>
-        <p id="modal-body" className="modal-body scrollable">
+        {modalTitle ? (
+          <h2 id="modal-title" className="modal-title">
+            {modalTitle}
+          </h2>
+        ) : null}
+        <div id="modal-body" className="modal-body scrollable">
           {message}
-        </p>
+        </div>
         <div className="modal-actions">
           {cancelLabel ? (
             <button className="modal-button" type="button" onClick={handleCancel}>

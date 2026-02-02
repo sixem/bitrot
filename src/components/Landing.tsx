@@ -1,8 +1,10 @@
 import { useCallback, type CSSProperties } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { APP_NAME, APP_TAGLINE, APP_VERSION } from "@/config/app";
+import AboutModalContent from "@/components/AboutModalContent";
 import DropZone from "@/components/DropZone";
 import useGlobalVideoDrop from "@/hooks/useGlobalVideoDrop";
+import useModal from "@/ui/modal/useModal";
 import { videoExtensions } from "@/domain/video";
 import { THEME_OPTIONS, type AppTheme } from "@/system/theme";
 import makeDebug from "@/utils/debug";
@@ -22,6 +24,7 @@ const Landing = ({ isReady, onVideoSelected, theme, onThemeChange }: LandingProp
     isEnabled: isReady,
     onVideoSelected
   });
+  const { openModal } = useModal();
   const handlePickVideo = useCallback(async () => {
     if (!isReady) {
       return;
@@ -47,11 +50,28 @@ const Landing = ({ isReady, onVideoSelected, theme, onThemeChange }: LandingProp
     }
   }, [handleDropPaths, isReady]);
 
+  // About modal helps explain the app and link out to source/author details.
+  const handleOpenAbout = useCallback(() => {
+    openModal({
+      ariaLabel: `${APP_NAME} about`,
+      message: <AboutModalContent />,
+      confirmLabel: "Close"
+    });
+  }, [openModal]);
+
   return (
     <main className="app" data-dragging={isDragging}>
       <div className="app-content">
         <header className="hero">
-          <span className="version">v{APP_VERSION}</span>
+          <button
+            type="button"
+            className="version"
+            aria-label={`About ${APP_NAME}`}
+            aria-haspopup="dialog"
+            onClick={handleOpenAbout}
+          >
+            v{APP_VERSION}
+          </button>
           <p className="eyebrow">{APP_TAGLINE}</p>
           <h1 className="title">{APP_NAME}</h1>
           <p className="lede">

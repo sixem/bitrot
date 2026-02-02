@@ -2,8 +2,9 @@ import { createContext, useCallback, useMemo, useState, type ReactNode } from "r
 import Modal from "@/ui/modal/Modal";
 
 export type ModalPayload = {
-  title: string;
-  message: string;
+  title?: string;
+  ariaLabel?: string;
+  message: ReactNode;
   confirmLabel?: string;
   cancelLabel?: string;
   onConfirm?: () => void;
@@ -66,7 +67,8 @@ const ModalProvider = ({ children }: ModalProviderProps) => {
       {children}
       <Modal
         isOpen={modal !== null}
-        title={modal?.title ?? ""}
+        title={modal?.title}
+        ariaLabel={modal?.ariaLabel}
         message={modal?.message ?? ""}
         confirmLabel={modal?.confirmLabel}
         cancelLabel={modal?.cancelLabel}

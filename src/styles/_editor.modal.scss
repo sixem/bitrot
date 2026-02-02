@@ -120,6 +120,84 @@
   max-height: min(50vh, 360px);
 }
 
+// About modal layout used by the landing page version badge.
+.about-modal {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.about-modal__heading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  text-align: center;
+  padding-bottom: 4px;
+}
+
+.about-modal__title {
+  margin: 0;
+  font-family: var(--title-font);
+  font-size: 2em;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+
+.about-modal__tagline {
+  margin: 0;
+  color: var(--muted-strong);
+  font-size: 0.7rem;
+  letter-spacing: 0.35em;
+  text-transform: uppercase;
+}
+
+.about-modal__list {
+  display: grid;
+  gap: 12px;
+}
+
+.about-modal__row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-start;
+}
+
+.about-modal__label {
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  font-size: 0.7rem;
+  color: var(--muted-strong);
+}
+
+.about-modal__value {
+  color: var(--fg);
+}
+
+.about-modal__link {
+  align-self: flex-start;
+  display: inline-flex;
+  color: var(--fg);
+  text-decoration: none;
+  border-bottom: 0;
+  overflow-wrap: anywhere;
+}
+
+.about-modal__link:hover,
+.about-modal__link:focus-visible {
+  color: var(--fg);
+  text-decoration: underline;
+  text-decoration-color: var(--muted-strong);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+
+.about-modal__link:focus-visible {
+  box-shadow: 0 0 0 2px var(--focus-ring);
+  border-radius: 2px;
+}
+
 .modal-actions {
   margin-top: 6px;
   display: flex;
